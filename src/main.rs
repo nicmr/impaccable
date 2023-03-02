@@ -29,8 +29,10 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             // if let Some(matching_group) = package_config.groups.get_mut(group) {
             //     matching_group.members.append(&mut packages.clone())
             // }
-            println!("{:?}", packages);
-            package_config.add_packages(packages.clone(), group).context("Failed to add packages")?;
+
+            let unique_packages = packages.clone().into_iter().collect();
+            package_config.add_packages(unique_packages, group).context("Failed to add packages")?;
+            println!("Added the following packages{:?}", packages);
         }
         None => {},
     }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::{PathBuf, Path}, process::{Command, Stdio}};
+use std::{collections::{HashMap, BTreeSet}, path::{PathBuf, Path}, process::{Command, Stdio}};
 use std::io;
 use anyhow::Context;
 use thiserror::Error;
@@ -45,21 +45,21 @@ pub enum DeclareManError {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct DeclaremanGroup {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageGroup {
     // this should probably be an ordered data structure so the packages are always ordered
     // so rework to btreeset (?)
-    pub members: Vec<GroupId>
-}
+    pub members: BTreeSet<GroupId>
+} 
 
-impl DeclaremanGroup {
-    pub fn new(members: Vec<GroupId>) -> Self {
+impl PackageGroup {
+    pub fn new(members: BTreeSet<GroupId>) -> Self {
         Self { members }
-    }
+    } 
 }
 
 pub type GroupId = String;
-type GroupMap = HashMap<GroupId, DeclaremanGroup>;
+type GroupMap = HashMap<GroupId, PackageGroup>;
 
 
 #[derive(Debug, Default)]
@@ -94,20 +94,7 @@ impl PackageConfiguration {
         Ok(package_configuration)
     }
 
-    pub fn add_packages(&mut self, packages: Vec<String>, group_id: &GroupId) -> Result<(), DeclareManError> {
-        // if self.groups.get(package).is_some() {
-        //     Err(DeclareManError::PackageAlreadyInGroup {
-        //         package: String::from(package),
-        //         group: String::from(group)
-        //     })
-        // } else {
-        //     // could use instead: self.groups.try_insert(group, value)
-        //     // but that requires converting OccupiedError into Declaremanerror
-        //     self.groups.insert(group.to_owned(), package.to_owned());
-        //     self.files.save_group_to_file(group)?;
-        //     Ok(())
-        // }
-
+    pub fn add_packages(&mut self, packages: BTreeSet<String>, group_id: &GroupId) -> Result<(), DeclareManError> {
         match self.groups.get_mut(group_id) {
             Some(group) => {
                 // group.members.push(package.to_string());
@@ -116,7 +103,7 @@ impl PackageConfiguration {
             None => {
                 self.groups.insert(
                     group_id.to_string(),
-                    DeclaremanGroup::new(packages)
+                    PackageGroup::new(packages)
                 );
             },
         }
@@ -144,8 +131,8 @@ impl PackageConfiguration {
         }
     }
 }
-
-
+    
+    
 /// Stores the files package groups are stored in. 
 /// Bidirectional, whereas 1 file maps to N groups
 #[derive(Debug, Default)]
@@ -196,7 +183,7 @@ struct Target {
     pub root_group: GroupId,
 }
 
-pub fn install_packages(packages: &HashMap<String, DeclaremanGroup>, install_group: &str) -> anyhow::Result<()> {
+pub fn install_packages(packages: &HashMap<String, PackageGroup>, install_group: &str) -> anyhow::Result<()> {
     if let Some(root_group) = packages.get(install_group) {
         let _pacman_command = Command::new("pacman")
             .arg("-S")
