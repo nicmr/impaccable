@@ -9,16 +9,54 @@ use walkdir::WalkDir;
 use std::io::Write;
 use std::iter::Extend;
 
+// TODO: add custom result type. Maybe with shorter name?
+// pub type DeclaremanResult<T> = Result<T, DeclaremanError>;
 
-#[derive(Debug, Serialize, Deserialize)]
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeclaremanConfig {
     pub root_group: GroupId,
     pub package_dir: PathBuf,
+    pub targets: HashMap<TargetId, TargetConfig>
 }  
 
 
+pub type TargetId = String;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TargetConfig {
+    pub root_groups: Vec<GroupId>
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ActiveTarget {
+    target : TargetId,
+}
+
+impl ActiveTarget {
+    pub fn from_path(path: &Path) -> Result<Self, DeclaremanError> {
+        let file_string = std::fs::read_to_string(path)?;
+        let active_target: ActiveTarget = toml::from_str(&file_string)?;
+        Ok(active_target)
+    }
+    pub fn target(&self) -> &TargetId {
+        &self.target
+    }
+
+    // TODO: should check that target exists, so should probably take targets map as argument
+    // TODO: nicer interface, not so intuitive having to pass the path here
+    /// Changes the active target and writes it to the specified file
+    pub fn set_target(&mut self, target: TargetId, path: &Path, ) -> Result<(), DeclaremanError> {
+        self.target = target;
+        let serialized_target = toml::to_string_pretty(self)?;
+        let mut file = std::fs::File::create(path)?;
+        write!(file, "{}", serialized_target)?;
+        Ok(())
+    }
+}
+
 #[derive(Error, Debug)]
-pub enum DeclareManError {
+pub enum DeclaremanError {
     #[error("Root package `{0}` not found")]
     RootPackageNotFound(String),
     // NotEnoughArguments("")
@@ -42,6 +80,11 @@ pub enum DeclareManError {
     SerializeFailure {
         #[from]
         source: toml::ser::Error,
+    },
+    #[error("Failed to deserialize from toml")]
+    DeserializeFailure {
+        #[from]
+        source: toml::de::Error,
     },
 }
 
@@ -94,7 +137,9 @@ impl PackageConfiguration {
         Ok(package_configuration)
     }
 
-    pub fn add_packages(&mut self, packages: BTreeSet<String>, group_id: &GroupId) -> Result<(), DeclareManError> {
+    // TODO: consider taking IntoIterator instead, we don't really care about the input collection
+    // https://stackoverflow.com/questions/34969902/how-to-write-a-rust-function-that-takes-an-iterator
+    pub fn add_packages(&mut self, packages: BTreeSet<String>, group_id: &GroupId) -> Result<(), DeclaremanError> {
         match self.groups.get_mut(group_id) {
             Some(group) => {
                 // group.members.push(package.to_string());
@@ -111,10 +156,23 @@ impl PackageConfiguration {
         Ok(())
     }
 
-    fn save_group_to_file(&self, group_id: &GroupId) -> Result< (), DeclareManError> {
+    // TODO: consider passing optional groupid to scope to group
+    /// Returns the ids of the packages it was removed from
+    pub fn remove_package(&mut self, package: &GroupId) -> BTreeSet<GroupId> {
+
+        let removed_from_groups : BTreeSet<GroupId> = self.groups.iter_mut()
+            .filter_map(|(group_id, group)| {
+                if group.members.remove(package) { Some(group_id.clone()) }
+                else { None }
+            }).collect();
+
+        removed_from_groups
+    }
+
+    fn save_group_to_file(&self, group_id: &GroupId) -> Result< (), DeclaremanError> {
         // let (file, groups)
         match self.files.groups_in_same_file(group_id) {
-            None => Err(DeclareManError::GroupNotFound { group: group_id.to_string()}),
+            None => Err(DeclaremanError::GroupNotFound { group: group_id.to_string()}),
             Some((file_path, group_ids)) => {
 
                 let groups_to_write : GroupMap = group_ids.iter()
@@ -193,6 +251,6 @@ pub fn install_packages(packages: &HashMap<String, PackageGroup>, install_group:
             .context("Failed to run pacman")?;
         Ok(())
     } else {
-        Err(anyhow::Error::from(DeclareManError::RootPackageNotFound(String::from(install_group))))
+        Err(anyhow::Error::from(DeclaremanError::RootPackageNotFound(String::from(install_group))))
     }
 }
