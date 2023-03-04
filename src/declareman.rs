@@ -12,7 +12,6 @@ use std::iter::Extend;
 // TODO: add custom result type. Maybe with shorter name?
 // pub type DeclaremanResult<T> = Result<T, DeclaremanError>;
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeclaremanConfig {
     pub root_group: GroupId,
@@ -34,7 +33,7 @@ pub struct ActiveTarget {
 }
 
 impl ActiveTarget {
-    pub fn from_path(path: &Path) -> Result<Self, DeclaremanError> {
+    pub fn parse(path: &Path) -> Result<Self, DeclaremanError> {
         let file_string = std::fs::read_to_string(path)?;
         let active_target: ActiveTarget = toml::from_str(&file_string)?;
         Ok(active_target)
@@ -60,11 +59,6 @@ pub enum DeclaremanError {
     #[error("Root package `{0}` not found")]
     RootPackageNotFound(String),
     // NotEnoughArguments("")
-    #[error("Package {package} already in group {group}")]
-    PackageAlreadyInGroup{
-        package: String,
-        group: String,
-    },
     #[error("Group `{group}` not found")]
     GroupNotFound {
         group: String,
@@ -112,7 +106,8 @@ pub struct PackageConfiguration {
 }
 
 impl PackageConfiguration {
-    pub fn try_parse (config: &DeclaremanConfig, config_path: &Path) -> anyhow::Result<Self> {
+    // TODO: take AsRef<Path> instead of &Path, like fs::read_to_string
+    pub fn parse(config: &DeclaremanConfig, config_path: &Path) -> anyhow::Result<Self> {
         // TODO: check if path is relative first (might already be absolute)
         // TODO: remove unwrap
         let absolute_package_dir = config_path.parent().unwrap().join(&config.package_dir);
@@ -226,15 +221,6 @@ impl GroupFiles {
 
 }
 
-// TODO:
-// new data structure for groupfiles
-// stores name of file and names of contained groups
-// has to store hashmap in both directions
-// groups -> filename to be able to look up the file a group is contained in
-// filename -> groups to know which to serialize when rewriting the file
-// when adding to group -> look up filename -> look up other groups in file -> serialize all
-
-
 #[derive(Debug, Serialize, Deserialize)]
 struct Target {
     pub name: String,
@@ -253,4 +239,19 @@ pub fn install_packages(packages: &HashMap<String, PackageGroup>, install_group:
     } else {
         Err(anyhow::Error::from(DeclaremanError::RootPackageNotFound(String::from(install_group))))
     }
+}
+
+pub fn pacman_query_installed() -> anyhow::Result<BTreeSet<String>> {
+    let pacman_output_bytes = Command::new("pacman")
+        .arg("-Qq")
+        .output()
+        .context("Failed to run pacman -Qq")?
+        .stdout;
+    let pacman_output_string = String::from_utf8(pacman_output_bytes).context("Failed to parse pacman stdout as utf8")?;
+    let mut installed_set : BTreeSet<String> = BTreeSet::new();
+    for line in pacman_output_string.lines() {
+        installed_set.insert(line.to_owned());
+        // TODO: could it be more efficient to have a consuming iterator and not have to use to_owned?
+    }
+    Ok(installed_set)
 }

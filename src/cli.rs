@@ -1,10 +1,15 @@
+use std::path::PathBuf;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(author, version, about="A mildly declarative pacman wrapper", arg_required_else_help=true)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Option<CliCommand>
+    pub command: Option<CliCommand>,
+
+    #[arg(short, long, value_name = "CONFIG_PATH")]
+    pub config: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -30,6 +35,8 @@ pub enum CliCommand {
     Target(Target),
 
     // Try, // should this be add --trial instead?
+
+    Diff,
 
     // Review / import 
     //    // untracked / trials
