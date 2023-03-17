@@ -17,7 +17,25 @@ pub struct DeclaremanConfig {
     pub root_group: GroupId,
     pub package_dir: PathBuf,
     pub targets: HashMap<TargetId, TargetConfig>
-}  
+}
+
+impl DeclaremanConfig {
+    /// Creates an instance of `Self` with placeholder values to template the config file
+    /// 
+    pub fn template() -> Self {
+        let mut targets = HashMap::new();
+        // TODO: use /etc/hostname or gethostname to insert the hostname of the machine as the default value
+        targets.insert(
+            String::from("my_arch_machine"),
+            TargetConfig { root_groups: [String::from("awesome_software")].into() }
+        );
+        Self {
+            root_group : "myrootgroup".into(),
+            package_dir : "./packages".into(),
+            targets,
+        }
+    }
+}
 
 
 pub type TargetId = String;
@@ -84,8 +102,6 @@ pub enum DeclaremanError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageGroup {
-    // this should probably be an ordered data structure so the packages are always ordered
-    // so rework to btreeset (?)
     pub members: BTreeSet<GroupId>
 } 
 

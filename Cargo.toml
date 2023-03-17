@@ -9,6 +9,7 @@ authors = ["Nicolas Mohr"]
 [dependencies]
 anyhow = "1.0.69"
 clap = {version = "4.1.6", features = ["derive"]}
+dialoguer = "0.10.3"
 directories = "4.0.1"
 serde = {version = "1.0.152", features = ["derive"]}
 thiserror = "1.0.38"
