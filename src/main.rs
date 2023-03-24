@@ -4,9 +4,9 @@ mod declareman;
 
 use clap::Parser;
 use declareman::{DeclaremanConfig, PackageConfiguration, install_packages, ActiveTarget};
-use dialoguer::{Input, Confirm, Editor};
+use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
-use std::{path::{Path, PathBuf}, fs, env, io};
+use std::{path::{Path, PathBuf}, fs, env, io, collections::BTreeSet};
 use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target};
@@ -77,6 +77,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
     };
     let mut package_config = PackageConfiguration::parse(&config, &config_path).context("Failed to parse package configuration")?;
     
+    // TODO: move to XDG config dir
     let active_target_path = Path::new("./declareman/active-target.toml");
     let mut active_target = ActiveTarget::parse(active_target_path).context("Failed to parse active target")?;
 
@@ -94,9 +95,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Some(CliCommand::Remove { package }) => {
             let removed_from_groups = package_config.remove_package(package);
-            println!("Removed from the following groups: {:?}", removed_from_groups)
 
-            // TODO: currently, remove does not perform a save, this has to be fixed
+            println!("Removed from the following groups: {:?}", removed_from_groups)
+            // TODO: BUG: currently, remove does not perform a save, this has to be fixed
         }
         Some(CliCommand::Target(subcommand)) => {
             match subcommand {
@@ -118,10 +119,28 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 },
             }
         }
-        Some(CliCommand::Diff) => {
+        Some(CliCommand::Diff { untracked }) => {
             let pacman_installed = declareman::pacman_query_installed().context("Failed to query installed packages")?;
-            for entry in pacman_installed {
-                println!("{}", entry)
+            let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.installed_packages()).cloned().collect();
+
+            // TODO: Consider making this section optional
+            println!("Installed on the system");
+            for pkg in intersection.iter() {
+                println!("{}", pkg)
+            }
+
+            let not_installed : BTreeSet<String>= package_config.installed_packages().iter().cloned().filter(|package| !intersection.contains(package)).collect();
+            println!("Not installed on the system:");
+            for pkg in not_installed {
+                println!("{}", &pkg)
+            }
+            
+            if *untracked {
+                println!("Untracked packages:");
+                let untracked_packages : BTreeSet<String> = pacman_installed.iter().cloned().filter(|package| !intersection.contains(package)).collect();
+                for pkg in untracked_packages {
+                    println!("{}", &pkg)
+                }
             }
         }
         None => {},

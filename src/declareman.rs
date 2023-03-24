@@ -148,6 +148,15 @@ impl PackageConfiguration {
         Ok(package_configuration)
     }
 
+    /// Returns a list of all installed packages
+    pub fn installed_packages(&self) -> BTreeSet<GroupId> {
+        self.groups.values()
+            .cloned()
+            .map(|package_group| package_group.members)
+            .flatten()
+            .collect()
+    }
+
     // TODO: consider taking IntoIterator instead, we don't really care about the input collection
     // https://stackoverflow.com/questions/34969902/how-to-write-a-rust-function-that-takes-an-iterator
     pub fn add_packages(&mut self, packages: BTreeSet<String>, group_id: &GroupId) -> Result<(), DeclaremanError> {

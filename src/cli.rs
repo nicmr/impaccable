@@ -8,17 +8,17 @@ pub struct Cli {
     #[command(subcommand)]
     pub command: Option<CliCommand>,
 
-    #[arg(short, long, value_name = "CONFIG_PATH")]
+    #[arg(short, long, value_name="CONFIG_PATH")]
     pub config: Option<PathBuf>,
 }
 
 #[derive(Subcommand)]
 pub enum CliCommand {
-    #[command(about="Dump the configuration file")]
+    /// Dump the configuration file
     Config,
-    #[command(about="Sync your target with the package configuration")]
+    /// Sync your target with the package configuration
     Sync,
-    #[command(about="Add packages to specified group")]
+    /// Add packages to specified group
     Add {
         #[arg(required=true, num_args=1..)]
         packages: Vec<String>,
@@ -26,7 +26,7 @@ pub enum CliCommand {
         #[arg(short, long, required=true)]
         group: String,
     },
-    #[command(about="Remove a package from groups your target is using")]
+    /// Remove a package from groups your target is using
     Remove {
         #[arg(required=true)]
         package: String,
@@ -36,12 +36,18 @@ pub enum CliCommand {
 
     // Try, // should this be add --trial instead?
 
-    Diff,
+    /// Compare your target with the active package configuration
+    Diff {
+        /// Also output untracked packages
+        #[arg(short, long)]
+        untracked: bool
+    },
 
     // Review / import 
     //    // untracked / trials
 }
 
+/// Interact with target configuration
 #[derive(Subcommand)]
 pub enum Target {
     #[command(about="List all targets")]
