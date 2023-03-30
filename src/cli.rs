@@ -10,6 +10,9 @@ pub struct Cli {
 
     #[arg(short, long, value_name="CONFIG_PATH")]
     pub config: Option<PathBuf>,
+
+    #[arg(short, long, value_name="TARGET_PATH")]
+    pub target: Option<PathBuf>
 }
 
 #[derive(Subcommand)]

@@ -6,7 +6,7 @@ use clap::Parser;
 use declareman::{DeclaremanConfig, PackageConfiguration, install_packages, ActiveTarget};
 use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
-use std::{path::{Path, PathBuf}, fs, env, io, collections::BTreeSet};
+use std::{path::{PathBuf}, fs, env, io, collections::BTreeSet};
 use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target};
@@ -14,20 +14,34 @@ use cli::{Cli, CliCommand, Target};
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
 
+
+    // TODO: replace expect
+    // TODO: check if 'directories' crate is even needed, as this only runs on Linux anyway, and its main benefit is being cross-platform
+    let default_project_dirs = ProjectDirs::from("dev.nicolasmohr.declareman", "Declareman Devs", "declareman")
+    .expect("Failed to compute ProjectDirs");
+
     let config_path = {
         if let Some(cli_config_override) = cli.config {
             cli_config_override
         }
-        else if let Ok(env_config_override)= env::var("DECLAREMAN_CONFIG") {
+        else if let Ok(env_config_override) = env::var("DECLAREMAN_CONFIG") {
             PathBuf::from(env_config_override)
         } else {
-            // TODO: replace unwrap
-            // TODO: check if directories is even needed, as this only runs on Linux anyway, and its main benefit is being cross-platform
-            let default_project_dirs = ProjectDirs::from("dev.nicolasmohr.declareman", "Declareman Devs", "declareman")
-                .expect("Failed to compute ProjectDirs");
             let mut default_config_path = default_project_dirs.config_dir().to_path_buf();
             default_config_path.push("config.toml");
             default_config_path
+        }
+    };
+
+    let active_target_path = {
+        if let Some(cli_target_override) = cli.target {
+            cli_target_override
+        } else if let Ok(env_target_override) = env::var("DECLAREMAN_TARGET") {
+            PathBuf::from(env_target_override)
+        } else {
+            let mut default_target_path = default_project_dirs.config_dir().to_path_buf();
+            default_target_path.push("active-target.toml");
+            default_target_path
         }
     };
 
@@ -70,17 +84,12 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         };
 
-        // handle no config file found: offer to create one
-        
-
         toml::from_str(&config_string).context("Failed to parse declareman configuration")?
     };
     let mut package_config = PackageConfiguration::parse(&config, &config_path).context("Failed to parse package configuration")?;
     
-    // TODO: move to XDG config dir
-    let active_target_path = Path::new("./declareman/active-target.toml");
-    let mut active_target = ActiveTarget::parse(active_target_path).context("Failed to parse active target")?;
-
+    // TODO: add bootstrapping of active_target on first run
+    let mut active_target = ActiveTarget::parse(&active_target_path).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?;
     match &cli.command {
         Some(CliCommand::Config) => {
             println!("config: {:?}", config);
@@ -115,7 +124,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                     println!("{}", active_target.target());
                 },
                 Target::Set { target } => {
-                    active_target.set_target(target.clone(), active_target_path).context("Failed to set active target")?;
+                    active_target.set_target(target.clone(), &active_target_path).context("Failed to set active target")?;
                 },
             }
         }
