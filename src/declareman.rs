@@ -45,22 +45,28 @@ pub struct TargetConfig {
     pub root_groups: Vec<GroupId>
 }
 
+// TODO: move behind ActiveTargetManager struct, that takes file path and manages consistency
+//       then remove IO from ActiveTarget
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ActiveTarget {
     target : TargetId,
 }
 
 impl ActiveTarget {
-    pub fn parse(path: &Path) -> Result<Self, DeclaremanError> {
-        let file_string = std::fs::read_to_string(path)?;
-        let active_target: ActiveTarget = toml::from_str(&file_string)?;
+    pub fn new(target: TargetId) -> Self {
+        Self {target}
+    }
+
+    pub fn parse(s: &str) -> Result<Self, DeclaremanError> {
+        let active_target: Self = toml::from_str(s)?;
         Ok(active_target)
     }
+
     pub fn target(&self) -> &TargetId {
         &self.target
     }
 
-    // TODO: should check that target exists, so should probably take targets map as argument
+    // TODO: should this check that the target exists? take target map as argument?
     // TODO: nicer interface, not so intuitive having to pass the path here
     /// Changes the active target and writes it to the specified file
     pub fn set_target(&mut self, target: TargetId, path: &Path, ) -> Result<(), DeclaremanError> {
