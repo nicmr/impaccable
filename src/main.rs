@@ -14,7 +14,6 @@ use cli::{Cli, CliCommand, Target};
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
 
-
     // TODO: replace expect
     // TODO: check if 'directories' crate is even needed, as this only runs on Linux anyway, and its main benefit is being cross-platform
     let default_project_dirs = ProjectDirs::from("dev.nicolasmohr.declareman", "Declareman Devs", "declareman")
@@ -45,12 +44,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
     };
 
-    // let config_path = Path::new("./declareman/config.toml");
-
     let config : DeclaremanConfig = {
-        // let config_string = fs::read_to_string(&config_path)
-        //     .context(format!("Failed to open declareman config file at {}", config_path.to_str().unwrap_or("invalid unicode")))?;
-
         let config_string = match fs::read_to_string(&config_path) {
             Ok(s) => s,
             Err(err) => match err.kind() {
@@ -86,10 +80,38 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
         toml::from_str(&config_string).context("Failed to parse declareman configuration")?
     };
+
     let mut package_config = PackageConfiguration::parse(&config, &config_path).context("Failed to parse package configuration")?;
     
-    // TODO: add bootstrapping of active_target on first run
-    let mut active_target = ActiveTarget::parse(&active_target_path).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?;
+    let mut active_target = match std::fs::read_to_string(&active_target_path) {
+        Ok(s) => ActiveTarget::parse(&s).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?,
+        Err(err) => match err.kind() {
+            io::ErrorKind::NotFound => {
+                println!("Failed to find active target file at {}", config_path.to_str().unwrap_or("<invalid unicode>"));
+                println!("Please select a new active target");
+
+                let targets : Vec<&String> = config.targets.keys().collect();
+                let selection = match dialoguer::Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                    .items(&targets)
+                    .interact_opt() {
+                        Ok(Some(sel)) => {
+                            sel
+                        },
+                        Ok(None) => {
+                            bail!("Target selection aborted")
+                        }
+                        Err(_err) => {
+                            bail!("Target selection crashed")
+                        }
+                };
+                ActiveTarget::new(targets[selection].to_string())
+            },
+            _ => {
+                bail!(err)
+            }
+        },
+    };
+
     match &cli.command {
         Some(CliCommand::Config) => {
             println!("config: {:?}", config);
