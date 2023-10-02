@@ -6,10 +6,10 @@ use clap::Parser;
 use declareman::{DeclaremanConfig, PackageConfiguration, install_packages, ActiveTarget};
 use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
-use std::{path::{PathBuf}, fs, env, io, collections::BTreeSet};
+use std::{path::{PathBuf}, fs::{self, File}, env, io, collections::BTreeSet};
 use std::io::Write;
 use anyhow::{Context, bail};
-use cli::{Cli, CliCommand, Target};
+use cli::{Cli, CliCommand, Target, Groups};
 
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
@@ -104,7 +104,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                             bail!("Target selection crashed")
                         }
                 };
-                ActiveTarget::new(targets[selection].to_string())
+                let active_target = ActiveTarget::new(targets[selection].to_string());
+                active_target
             },
             _ => {
                 bail!(err)
@@ -115,7 +116,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
     match &cli.command {
         Some(CliCommand::Config) => {
             println!("config: {:?}", config);
-        },
+        }
         Some(CliCommand::Sync) => {
             install_packages(&package_config.groups, &config.root_group)?;
         }
@@ -150,6 +151,14 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 },
             }
         }
+        Some(CliCommand::Groups(subcommand)) => {
+            match subcommand {
+                // TODO: currently only lists installed groups instead of all
+                Groups::Ls => {
+                    package_config.groups.keys().for_each(|group_name| println!("{}", group_name))
+                }
+            }
+        }
         Some(CliCommand::Diff { untracked }) => {
             let pacman_installed = declareman::pacman_query_installed().context("Failed to query installed packages")?;
             let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.installed_packages()).cloned().collect();
@@ -174,11 +183,25 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 }
             }
         }
+        Some(CliCommand::Template) => {
+            let system_configuration = declareman::distro::get_system_configuration().context("Failed to get system configuration")?;
+            // TODO: switch to a display implementation
+            println!("System configuration: {:?}", &system_configuration);
+            let new_groups = declareman::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
+            
+            // TODO: refactor to separate function
+            // TODO: remove unwrap
+            let mut file_path = config_path.parent().unwrap()
+                .join(&config.package_dir)
+                .join(system_configuration.distro);
+
+            file_path.set_extension("toml");
+
+            let mut file = File::create(file_path).context("Failed to create file for new package group")?;
+            let toml = toml::ser::to_string_pretty(&new_groups)?;
+            write!(file, "{}", toml)?;
+        }
         None => {},
     }
     Ok(())
 }
-
-
-
-

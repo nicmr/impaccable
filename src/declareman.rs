@@ -9,6 +9,9 @@ use walkdir::WalkDir;
 use std::io::Write;
 use std::iter::Extend;
 
+pub mod diff;
+pub mod distro;
+
 // TODO: add custom result type. Maybe with shorter name?
 // pub type DeclaremanResult<T> = Result<T, DeclaremanError>;
 
@@ -45,8 +48,7 @@ pub struct TargetConfig {
     pub root_groups: Vec<GroupId>
 }
 
-// TODO: move behind ActiveTargetManager struct, that takes file path and manages consistency
-//       then remove IO from ActiveTarget
+// Manages the active Target of the system. Will write to the active target file on configuration change
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ActiveTarget {
     target : TargetId,
@@ -106,13 +108,15 @@ pub enum DeclaremanError {
     },
 }
 
+pub type PackageId = String;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageGroup {
-    pub members: BTreeSet<GroupId>
+    pub members: BTreeSet<PackageId>
 } 
 
 impl PackageGroup {
-    pub fn new(members: BTreeSet<GroupId>) -> Self {
+    pub fn new(members: BTreeSet<PackageId>) -> Self {
         Self { members }
     } 
 }
@@ -143,8 +147,8 @@ impl PackageConfiguration {
             .filter(|e| !e.file_type().is_dir()) {
             
             let file_string = std::fs::read_to_string(entry.path())?;
-            let group_for_file: GroupMap = toml::from_str(&file_string)?;
-            for (group_name, group_values) in group_for_file.into_iter() {
+            let groups_in_file: GroupMap = toml::from_str(&file_string)?;
+            for (group_name, group_values) in groups_in_file.into_iter() {
                 package_configuration.files.add_group(entry.path().to_path_buf(), group_name.clone());
 
                 // TODO: ensure group name is not already defined
@@ -155,7 +159,7 @@ impl PackageConfiguration {
     }
 
     /// Returns a list of all installed packages
-    pub fn installed_packages(&self) -> BTreeSet<GroupId> {
+    pub fn installed_packages(&self) -> BTreeSet<PackageId> {
         self.groups.values()
             .cloned()
             .map(|package_group| package_group.members)
@@ -163,8 +167,7 @@ impl PackageConfiguration {
             .collect()
     }
 
-    // TODO: consider taking IntoIterator instead, we don't really care about the input collection
-    // https://stackoverflow.com/questions/34969902/how-to-write-a-rust-function-that-takes-an-iterator
+    /// Adds a package to the specified group
     pub fn add_packages(&mut self, packages: BTreeSet<String>, group_id: &GroupId) -> Result<(), DeclaremanError> {
         match self.groups.get_mut(group_id) {
             Some(group) => {
@@ -183,7 +186,7 @@ impl PackageConfiguration {
     }
 
     // TODO: consider passing optional groupid to scope to group
-    /// Returns the ids of the packages it was removed from
+    /// Returns the ids of the groups it was removed from
     pub fn remove_package(&mut self, package: &GroupId) -> BTreeSet<GroupId> {
 
         let removed_from_groups : BTreeSet<GroupId> = self.groups.iter_mut()
@@ -286,3 +289,6 @@ pub fn pacman_query_installed() -> anyhow::Result<BTreeSet<String>> {
     }
     Ok(installed_set)
 }
+
+
+

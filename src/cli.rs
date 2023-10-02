@@ -46,8 +46,15 @@ pub enum CliCommand {
         untracked: bool
     },
 
+    /// Get a package template for your Arch-based distro
+    Template,
+
     // Review / import 
     //    // untracked / trials
+
+
+    #[command(subcommand)]
+    Groups(Groups)
 }
 
 /// Interact with target configuration
@@ -62,4 +69,10 @@ pub enum Target {
         #[arg(required=true)]
         target: String,
     },
+}
+
+/// Manage Groups
+#[derive(Subcommand)]
+pub enum Groups {
+    Ls,
 }
