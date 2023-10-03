@@ -3,10 +3,10 @@ mod declareman;
 
 
 use clap::Parser;
-use declareman::{DeclaremanConfig, PackageConfiguration, install_packages, ActiveTarget};
+use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}};
 use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
-use std::{path::{PathBuf}, fs::{self, File}, env, io, collections::BTreeSet};
+use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
 use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target, Groups};
@@ -44,7 +44,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
     };
 
-    let config : DeclaremanConfig = {
+
+
+    let config_manager : declareman::config::DeclaremanConfigManager = {
         let config_string = match fs::read_to_string(&config_path) {
             Ok(s) => s,
             Err(err) => match err.kind() {
@@ -54,7 +56,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                         println!("Let's create a new file");
 
                         // write default values, then open editor
-                        let config_template = declareman::DeclaremanConfig::template();
+                        let config_template = declareman::config::DeclaremanConfig::template();
                         let serialized_template = toml::to_string_pretty(&config_template)?;
 
                         
@@ -78,19 +80,20 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         };
 
-        toml::from_str(&config_string).context("Failed to parse declareman configuration")?
+        let config = toml::from_str(&config_string).context("Failed to parse declareman configuration")?;
+        DeclaremanConfigManager::new(config_path, config)
     };
 
-    let mut package_config = PackageConfiguration::parse(&config, &config_path).context("Failed to parse package configuration")?;
+    let mut package_config = config_manager.package_configuration().context("Failed to parse package configuration")?;
     
     let mut active_target = match std::fs::read_to_string(&active_target_path) {
         Ok(s) => ActiveTarget::parse(&s).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?,
         Err(err) => match err.kind() {
             io::ErrorKind::NotFound => {
-                println!("Failed to find active target file at {}", config_path.to_str().unwrap_or("<invalid unicode>"));
+                println!("Failed to find active target file at {}", &config_manager.config_path().to_str().unwrap_or("<invalid unicode>"));
                 println!("Please select a new active target");
 
-                let targets : Vec<&String> = config.targets.keys().collect();
+                let targets : Vec<&String> = config_manager.config().targets.keys().collect();
                 let selection = match dialoguer::Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
                     .items(&targets)
                     .interact_opt() {
@@ -115,10 +118,10 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
     match &cli.command {
         Some(CliCommand::Config) => {
-            println!("config: {:?}", config);
+            println!("config: {:?}", config_manager.config());
         }
         Some(CliCommand::Sync) => {
-            install_packages(&package_config.groups, &config.root_group)?;
+            install_packages(&package_config.groups, &config_manager.config().root_group)?;
         }
         Some(CliCommand::Add { packages, group }) => {
             let unique_packages = packages.clone().into_iter().collect();
@@ -135,8 +138,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             match subcommand {
                 Target::Ls => {
                     let active_target = active_target.target();
-                    for (name, _) in config.targets {
-                        if &name == active_target {
+                    for (name, _) in &config_manager.config().targets {
+                        if name == active_target {
                             println!("{} (active)", name);
                         } else {
                             println!("{}", name);
@@ -153,14 +156,13 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Some(CliCommand::Groups(subcommand)) => {
             match subcommand {
-                // TODO: currently only lists installed groups instead of all
                 Groups::Ls => {
                     package_config.groups.keys().for_each(|group_name| println!("{}", group_name))
                 }
             }
         }
         Some(CliCommand::Diff { untracked }) => {
-            let pacman_installed = declareman::pacman_query_installed().context("Failed to query installed packages")?;
+            let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
             let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.installed_packages()).cloned().collect();
 
             // TODO: Consider making this section optional
@@ -190,11 +192,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             let new_groups = declareman::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
             
             // TODO: refactor to separate function
-            // TODO: remove unwrap
-            let mut file_path = config_path.parent().unwrap()
-                .join(&config.package_dir)
-                .join(system_configuration.distro);
-
+            // TODO: handle absolute path
+            let mut file_path = config_manager.absolute_package_dir()?;
             file_path.set_extension("toml");
 
             let mut file = File::create(file_path).context("Failed to create file for new package group")?;

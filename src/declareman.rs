@@ -3,82 +3,26 @@ use std::io;
 use anyhow::Context;
 use thiserror::Error;
 use serde::{Deserialize, Serialize};
-use walkdir::WalkDir;
 
 // use std::io::prelude::*;
 use std::io::Write;
-use std::iter::Extend;
 
-pub mod diff;
+pub mod pacman;
 pub mod distro;
+pub mod config;
 
 // TODO: add custom result type. Maybe with shorter name?
 // pub type DeclaremanResult<T> = Result<T, DeclaremanError>;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DeclaremanConfig {
-    pub root_group: GroupId,
-    pub package_dir: PathBuf,
-    pub targets: HashMap<TargetId, TargetConfig>
-}
-
-impl DeclaremanConfig {
-    /// Creates an instance of `Self` with placeholder values to template the config file
-    /// 
-    pub fn template() -> Self {
-        let mut targets = HashMap::new();
-        // TODO: use /etc/hostname or gethostname to insert the hostname of the machine as the default value
-        targets.insert(
-            String::from("my_arch_machine"),
-            TargetConfig { root_groups: [String::from("awesome_software")].into() }
-        );
-        Self {
-            root_group : "myrootgroup".into(),
-            package_dir : "./packages".into(),
-            targets,
-        }
-    }
-}
 
 
-pub type TargetId = String;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TargetConfig {
     pub root_groups: Vec<GroupId>
 }
 
-// Manages the active Target of the system. Will write to the active target file on configuration change
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ActiveTarget {
-    target : TargetId,
-}
 
-impl ActiveTarget {
-    pub fn new(target: TargetId) -> Self {
-        Self {target}
-    }
-
-    pub fn parse(s: &str) -> Result<Self, DeclaremanError> {
-        let active_target: Self = toml::from_str(s)?;
-        Ok(active_target)
-    }
-
-    pub fn target(&self) -> &TargetId {
-        &self.target
-    }
-
-    // TODO: should this check that the target exists? take target map as argument?
-    // TODO: nicer interface, not so intuitive having to pass the path here
-    /// Changes the active target and writes it to the specified file
-    pub fn set_target(&mut self, target: TargetId, path: &Path, ) -> Result<(), DeclaremanError> {
-        self.target = target;
-        let serialized_target = toml::to_string_pretty(self)?;
-        let mut file = std::fs::File::create(path)?;
-        write!(file, "{}", serialized_target)?;
-        Ok(())
-    }
-}
 
 #[derive(Error, Debug)]
 pub enum DeclaremanError {
@@ -131,93 +75,6 @@ pub struct PackageConfiguration {
     pub groups: GroupMap,
 }
 
-impl PackageConfiguration {
-    // TODO: take AsRef<Path> instead of &Path, like fs::read_to_string
-    pub fn parse(config: &DeclaremanConfig, config_path: &Path) -> anyhow::Result<Self> {
-        // TODO: check if path is relative first (might already be absolute)
-        // TODO: remove unwrap
-        let absolute_package_dir = config_path.parent().unwrap().join(&config.package_dir);
-        println!("{:?}", absolute_package_dir);
-
-        let mut package_configuration = PackageConfiguration::default();
-
-        for entry in WalkDir::new(&absolute_package_dir)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|e| !e.file_type().is_dir()) {
-            
-            let file_string = std::fs::read_to_string(entry.path())?;
-            let groups_in_file: GroupMap = toml::from_str(&file_string)?;
-            for (group_name, group_values) in groups_in_file.into_iter() {
-                package_configuration.files.add_group(entry.path().to_path_buf(), group_name.clone());
-
-                // TODO: ensure group name is not already defined
-                package_configuration.groups.insert(group_name, group_values);
-            }
-        }
-        Ok(package_configuration)
-    }
-
-    /// Returns a list of all installed packages
-    pub fn installed_packages(&self) -> BTreeSet<PackageId> {
-        self.groups.values()
-            .cloned()
-            .map(|package_group| package_group.members)
-            .flatten()
-            .collect()
-    }
-
-    /// Adds a package to the specified group
-    pub fn add_packages(&mut self, packages: BTreeSet<String>, group_id: &GroupId) -> Result<(), DeclaremanError> {
-        match self.groups.get_mut(group_id) {
-            Some(group) => {
-                // group.members.push(package.to_string());
-                group.members.extend(packages)
-            }
-            None => {
-                self.groups.insert(
-                    group_id.to_string(),
-                    PackageGroup::new(packages)
-                );
-            },
-        }
-        self.save_group_to_file(group_id)?;
-        Ok(())
-    }
-
-    // TODO: consider passing optional groupid to scope to group
-    /// Returns the ids of the groups it was removed from
-    pub fn remove_package(&mut self, package: &GroupId) -> BTreeSet<GroupId> {
-
-        let removed_from_groups : BTreeSet<GroupId> = self.groups.iter_mut()
-            .filter_map(|(group_id, group)| {
-                if group.members.remove(package) { Some(group_id.clone()) }
-                else { None }
-            }).collect();
-
-        removed_from_groups
-    }
-
-    fn save_group_to_file(&self, group_id: &GroupId) -> Result< (), DeclaremanError> {
-        // let (file, groups)
-        match self.files.groups_in_same_file(group_id) {
-            None => Err(DeclaremanError::GroupNotFound { group: group_id.to_string()}),
-            Some((file_path, group_ids)) => {
-
-                let groups_to_write : GroupMap = group_ids.iter()
-                    .filter_map(|group_id| self.groups.get_key_value(group_id))
-                    .map(|(gid, g)| (gid.to_owned(), g.clone()))
-                    .collect();
-
-                let serialized_groups = toml::to_string_pretty(&groups_to_write)?;
-                
-                let mut file = std::fs::File::create(file_path)?;
-                write!(file, "{}", serialized_groups)?;
-                Ok(())
-            }
-        }
-    }
-}
     
     
 /// Stores the files package groups are stored in. 
@@ -274,21 +131,3 @@ pub fn install_packages(packages: &HashMap<String, PackageGroup>, install_group:
         Err(anyhow::Error::from(DeclaremanError::RootPackageNotFound(String::from(install_group))))
     }
 }
-
-pub fn pacman_query_installed() -> anyhow::Result<BTreeSet<String>> {
-    let pacman_output_bytes = Command::new("pacman")
-        .arg("-Qq")
-        .output()
-        .context("Failed to run pacman -Qq")?
-        .stdout;
-    let pacman_output_string = String::from_utf8(pacman_output_bytes).context("Failed to parse pacman stdout as utf8")?;
-    let mut installed_set : BTreeSet<String> = BTreeSet::new();
-    for line in pacman_output_string.lines() {
-        installed_set.insert(line.to_owned());
-        // TODO: could it be more efficient to have a consuming iterator and not have to use to_owned?
-    }
-    Ok(installed_set)
-}
-
-
-
