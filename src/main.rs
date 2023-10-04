@@ -90,7 +90,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Ok(s) => ActiveTarget::parse(&s).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?,
         Err(err) => match err.kind() {
             io::ErrorKind::NotFound => {
-                println!("Failed to find active target file at {}", &config_manager.config_path().to_str().unwrap_or("<invalid unicode>"));
+                println!("Failed to find active target file at {}", &active_target_path.to_string_lossy());
                 println!("Please select a new active target");
 
                 let targets : Vec<&String> = config_manager.config().targets.keys().collect();
@@ -108,6 +108,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                         }
                 };
                 let active_target = ActiveTarget::new(targets[selection].to_string());
+                let mut file = File::create(&active_target_path).context("Failed to create file for new package group")?;
+                let toml = toml::ser::to_string_pretty(&active_target)?;
+                write!(file, "{}", toml)?;
                 active_target
             },
             _ => {
