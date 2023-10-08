@@ -6,7 +6,7 @@ pub fn query_installed() -> anyhow::Result<BTreeSet<String>> {
     let pacman_output_bytes = Command::new("pacman")
         .arg("-Qqe")
         .output()
-        .context("Failed to run pacman -Qq")?
+        .context("Failed to run pacman -Qqe")?
         .stdout;
     let pacman_output_string = String::from_utf8(pacman_output_bytes).context("Failed to parse pacman stdout as utf8")?;
     let mut installed_set : BTreeSet<String> = BTreeSet::new();

@@ -4,17 +4,12 @@ use anyhow::Context;
 use thiserror::Error;
 use serde::{Deserialize, Serialize};
 
-// use std::io::prelude::*;
-use std::io::Write;
-
 pub mod pacman;
 pub mod distro;
 pub mod config;
 
 // TODO: add custom result type. Maybe with shorter name?
 // pub type DeclaremanResult<T> = Result<T, DeclaremanError>;
-
-
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -68,15 +63,6 @@ impl PackageGroup {
 pub type GroupId = String;
 type GroupMap = HashMap<GroupId, PackageGroup>;
 
-
-#[derive(Debug, Default)]
-pub struct PackageConfiguration {
-    files: GroupFiles,
-    pub groups: GroupMap,
-}
-
-    
-    
 /// Stores the files package groups are stored in. 
 /// Bidirectional, whereas 1 file maps to N groups
 #[derive(Debug, Default)]
@@ -108,8 +94,6 @@ impl GroupFiles {
         let file = self.file(group)?;
         self.groups(file).map(|groups| (file, groups))
     }
-
-
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -130,4 +114,18 @@ pub fn install_packages(packages: &HashMap<String, PackageGroup>, install_group:
     } else {
         Err(anyhow::Error::from(DeclaremanError::RootPackageNotFound(String::from(install_group))))
     }
+}
+
+
+pub fn group_intersection(packages_by_group: HashMap<String, PackageGroup>, other: BTreeSet<String>) -> HashMap<String, PackageGroup> {
+    let mut intersections_by_group = HashMap::with_capacity(packages_by_group.len());
+
+    for (group, packages) in packages_by_group {
+        intersections_by_group.insert(group, 
+            PackageGroup {
+                members: packages.members.intersection(&other).cloned().collect()
+            }
+        );
+    }
+    intersections_by_group
 }

@@ -3,10 +3,10 @@ mod declareman;
 
 
 use clap::Parser;
-use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}};
+use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}, PackageGroup};
 use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
-use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
+use std::{path::PathBuf, fs::{self, File}, env, io, collections::{BTreeSet, HashMap}};
 use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target, Groups};
@@ -166,18 +166,20 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Some(CliCommand::Diff { untracked }) => {
             let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
-            let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.installed_packages()).cloned().collect();
+            let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
+
+            use colored::Colorize;
 
             // TODO: Consider making this section optional
-            println!("Installed on the system");
+            println!("{}", "Installed on the system".blue());
             for pkg in intersection.iter() {
-                println!("{}", pkg)
+                println!("{}", pkg.blue())
             }
 
-            let not_installed : BTreeSet<String>= package_config.installed_packages().iter().cloned().filter(|package| !intersection.contains(package)).collect();
-            println!("Not installed on the system:");
+            let not_installed : BTreeSet<String>= package_config.packages().iter().cloned().filter(|package| !intersection.contains(package)).collect();
+            println!("{}", "Not installed on the system:".green());
             for pkg in not_installed {
-                println!("{}", &pkg)
+                println!("{}", &pkg.green())
             }
             
             if *untracked {
@@ -188,6 +190,34 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 }
             }
         }
+        
+        Some(CliCommand::Plan) => {
+            let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
+            // let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
+
+            // let intersection_by_group = declareman::group_intersection(package_config.groups, pacman_installed);
+
+            let not_installed_by_group : HashMap<String, PackageGroup> = package_config.groups.clone().iter().map(
+                | (a, packages) |
+                    (a, PackageGroup {members: packages.members.iter().filter(|package| pacman_installed.contains(*package)).cloned().collect()})
+            ).collect();
+
+            use colored::Colorize;
+
+            println!("{}", "Sync would install the following programs".green());
+
+            for (group, packages) in intersection_by_group {
+                let not_installed : BTreeSet<String>= package_config.packages().iter().cloned().filter(|package| !intersection.contains(package)).collect();
+                for pkg in not_installed {
+                    println!("{} {}", "+".green(), &pkg.green())
+                }
+            }
+            
+
+
+
+        }
+
         Some(CliCommand::Template) => {
             let system_configuration = declareman::distro::get_system_configuration().context("Failed to get system configuration")?;
             // TODO: switch to a display implementation
@@ -203,7 +233,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             let toml = toml::ser::to_string_pretty(&new_groups)?;
             write!(file, "{}", toml)?;
         }
-        None => {},
+        None => {}
     }
     Ok(())
 }
+

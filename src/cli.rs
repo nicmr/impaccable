@@ -46,6 +46,9 @@ pub enum CliCommand {
         untracked: bool
     },
 
+    /// Check what changes a sync would apply
+    Plan,
+
     /// Get a package template for your Arch-based distro
     Template,
 

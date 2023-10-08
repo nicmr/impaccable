@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 use walkdir::WalkDir;
 use std::io::Write;
 
-use super::{GroupId, TargetConfig, PackageConfiguration, DeclaremanError, GroupMap, PackageId, PackageGroup};
+use super::{GroupId, TargetConfig, DeclaremanError, GroupMap, PackageId, PackageGroup, GroupFiles};
 
 use std::iter::Extend;
 
@@ -70,7 +70,11 @@ impl DeclaremanConfig {
     }
 }
 
-
+#[derive(Debug, Default)]
+pub struct PackageConfiguration {
+    files: GroupFiles,
+    pub groups: GroupMap,
+}
 
 impl PackageConfiguration {
     fn parse(package_dir: &Path) -> anyhow::Result<Self> {
@@ -93,7 +97,7 @@ impl PackageConfiguration {
     }
 
     /// Returns a list of all installed packages
-    pub fn installed_packages(&self) -> BTreeSet<PackageId> {
+    pub fn packages(&self) -> BTreeSet<PackageId> {
         self.groups.values()
             .cloned()
             .map(|package_group| package_group.members)
