@@ -79,7 +79,7 @@ pub struct PackageConfiguration {
 impl PackageConfiguration {
     fn parse(package_dir: &Path) -> anyhow::Result<Self> {
         let mut package_configuration = PackageConfiguration::default();
-        for entry in WalkDir::new(&package_dir)
+        for entry in WalkDir::new(package_dir)
             .into_iter()
             .filter_map(Result::ok)
             .filter(|e| !e.file_type().is_dir()) {
@@ -100,8 +100,7 @@ impl PackageConfiguration {
     pub fn packages(&self) -> BTreeSet<PackageId> {
         self.groups.values()
             .cloned()
-            .map(|package_group| package_group.members)
-            .flatten()
+            .flat_map(|package_group| package_group.members)
             .collect()
     }
 

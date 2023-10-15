@@ -6,7 +6,7 @@ use crate::declareman::PackageGroup;
 
 use super::GroupMap;
 
-const ENDEAVOUR_OS : &'static str = "EndeavourOS";
+const ENDEAVOUR_OS : &str = "EndeavourOS";
 
 /// Custom distro support for templating your packages
 

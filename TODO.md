@@ -1,8 +1,5 @@
 - fix missing save bug
-- `target X` add bootstrapping of active_target.toml when bootstrapping config
-- `target set`: only allow setting of available targets, not arbitrary strings
 - import: import installed packages into your configuration
   - interactive (default) / all : select packages
 - option sync -P / --pacflags argument: pass arbitrary flags to pacman
-- keep IO out of declareman module
 - move active target management behind active target manager

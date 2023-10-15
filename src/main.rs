@@ -141,7 +141,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             match subcommand {
                 Target::Ls => {
                     let active_target = active_target.target();
-                    for (name, _) in &config_manager.config().targets {
+                    for name in config_manager.config().targets.keys() {
                         if name == active_target {
                             println!("{} (active)", name);
                         } else {
@@ -152,8 +152,12 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 Target::Get => {
                     println!("{}", active_target.target());
                 },
-                Target::Set { target } => {
-                    active_target.set_target(target.clone(), &active_target_path).context("Failed to set active target")?;
+                Target::Set { target, force } => {
+                    if *force || config_manager.config().targets.contains_key(target) {
+                        active_target.set_target(target.clone(), &active_target_path).context("Failed to set active target")?;
+                    } else {
+                        println!("Did not set target '{}' because it is not in the list of available targets. Check targets with `target ls` or override with `--force`", target)
+                    }
                 },
             }
         }
@@ -195,27 +199,25 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
             // let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
 
-            // let intersection_by_group = declareman::group_intersection(package_config.groups, pacman_installed);
+            // let intersection_by_group = declareman::group_intersection(package_config.groups, &pacman_installed);
 
-            let not_installed_by_group : HashMap<String, PackageGroup> = package_config.groups.clone().iter().map(
+            let not_installed_by_group : HashMap<&String, PackageGroup> = package_config.groups.iter().map(
                 | (a, packages) |
-                    (a, PackageGroup {members: packages.members.iter().filter(|package| pacman_installed.contains(*package)).cloned().collect()})
+                    (a, PackageGroup {members: packages.members.iter().filter(|package| !pacman_installed.contains(*package)).cloned().collect()})
             ).collect();
 
             use colored::Colorize;
 
             println!("{}", "Sync would install the following programs".green());
 
-            for (group, packages) in intersection_by_group {
-                let not_installed : BTreeSet<String>= package_config.packages().iter().cloned().filter(|package| !intersection.contains(package)).collect();
-                for pkg in not_installed {
-                    println!("{} {}", "+".green(), &pkg.green())
+            for (group, missing_packages) in not_installed_by_group {
+                if !missing_packages.members.is_empty() {
+                    println!("{}", format!("From group '{}':", group).green());
+                    for pkg in missing_packages.members {
+                        println!("{} {}", "+".green(), &pkg.green())
+                    }
                 }
             }
-            
-
-
-
         }
 
         Some(CliCommand::Template) => {

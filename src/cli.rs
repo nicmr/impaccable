@@ -71,6 +71,9 @@ pub enum Target {
     Set {
         #[arg(required=true)]
         target: String,
+
+        #[arg(long)]
+        force: bool,
     },
 }
 

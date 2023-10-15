@@ -117,15 +117,17 @@ pub fn install_packages(packages: &HashMap<String, PackageGroup>, install_group:
 }
 
 
-pub fn group_intersection(packages_by_group: HashMap<String, PackageGroup>, other: BTreeSet<String>) -> HashMap<String, PackageGroup> {
+pub fn group_intersection(packages_by_group: HashMap<String, PackageGroup>, with_set: &BTreeSet<String>) -> HashMap<String, PackageGroup> {
     let mut intersections_by_group = HashMap::with_capacity(packages_by_group.len());
 
+    // todo: more efficient map, maybe iter_mut implementation instead
     for (group, packages) in packages_by_group {
         intersections_by_group.insert(group, 
             PackageGroup {
-                members: packages.members.intersection(&other).cloned().collect()
+                members: packages.members.intersection(with_set).cloned().collect()
             }
         );
     }
+
     intersections_by_group
 }
