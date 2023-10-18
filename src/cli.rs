@@ -20,7 +20,11 @@ pub enum CliCommand {
     /// Dump the configuration file
     Config,
     /// Sync your target with the package configuration
-    Sync,
+    Sync {
+        /// Remove packages not tracked by your configuration
+        #[arg(long)]
+        remove_untracked: bool,
+    },
     /// Add packages to specified group
     Add {
         #[arg(required=true, num_args=1..)]
@@ -46,15 +50,18 @@ pub enum CliCommand {
         untracked: bool
     },
 
-    /// Check what changes a sync would apply
-    Plan,
+    /// Check what changes a Sync would apply
+    Plan {
+        /// Evaluate what changes sync with this flag would apply
+        #[arg(long)]
+        remove_untracked: bool
+    },
 
     /// Get a package template for your Arch-based distro
     Template,
 
     // Review / import 
     //    // untracked / trials
-
 
     #[command(subcommand)]
     Groups(Groups)

@@ -104,6 +104,17 @@ impl PackageConfiguration {
             .collect()
     }
 
+    // pub fn installed_packages_by_group(&self, system_packages: &BTreeSet<String>) -> BTreeSet<PackageId> {
+
+    // }
+
+    pub fn not_installed_packages_by_group(&self, system_packages: &BTreeSet<String>) -> HashMap<&String, PackageGroup> {
+        self.groups.iter().map(
+            | (a, packages) |
+                (a, PackageGroup {members: packages.members.iter().filter(|package| !system_packages.contains(*package)).cloned().collect()})
+        ).collect()
+    }
+
     /// Adds a package to the specified group
     pub fn add_packages(&mut self, packages: BTreeSet<String>, group_id: &GroupId) -> Result<(), DeclaremanError> {
         match self.groups.get_mut(group_id) {

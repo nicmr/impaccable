@@ -3,13 +3,15 @@ mod declareman;
 
 
 use clap::Parser;
-use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}, PackageGroup};
+use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}};
 use dialoguer::{Confirm, Editor};
 use directories::ProjectDirs;
-use std::{path::PathBuf, fs::{self, File}, env, io, collections::{BTreeSet, HashMap}};
+use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
 use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target, Groups};
+
+use crate::declareman::pacman::packages_required_by;
 
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
@@ -123,8 +125,18 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Some(CliCommand::Config) => {
             println!("config: {:?}", config_manager.config());
         }
-        Some(CliCommand::Sync) => {
-            install_packages(&package_config.groups, &config_manager.config().root_group)?;
+        Some(CliCommand::Sync { remove_untracked }) => {
+
+            let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
+            // let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
+            let not_installed : BTreeSet<String> = package_config.packages().iter().cloned().filter(|package| !pacman_installed.contains(package)).collect();
+            install_packages(not_installed).context("Failed to install missing packages")?;
+            
+            if *remove_untracked {
+                let untracked_packages = pacman_installed.iter().cloned().filter(|package| package_config.packages().contains(package));
+                let _uninstall_exit_status = declareman::pacman::uninstall_packages(untracked_packages)?;
+            }
+            // install_group_packages(&package_config.groups, &config_manager.config().root_group)?;
         }
         Some(CliCommand::Add { packages, group }) => {
             let unique_packages = packages.clone().into_iter().collect();
@@ -195,26 +207,36 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         }
         
-        Some(CliCommand::Plan) => {
+        Some(CliCommand::Plan { remove_untracked }) => {
             let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
             // let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
 
             // let intersection_by_group = declareman::group_intersection(package_config.groups, &pacman_installed);
 
-            let not_installed_by_group : HashMap<&String, PackageGroup> = package_config.groups.iter().map(
-                | (a, packages) |
-                    (a, PackageGroup {members: packages.members.iter().filter(|package| !pacman_installed.contains(*package)).cloned().collect()})
-            ).collect();
+            let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
 
             use colored::Colorize;
 
-            println!("{}", "Sync would install the following programs".green());
+            println!("{}", "Sync would install the following programs");
 
             for (group, missing_packages) in not_installed_by_group {
                 if !missing_packages.members.is_empty() {
                     println!("{}", format!("From group '{}':", group).green());
                     for pkg in missing_packages.members {
                         println!("{} {}", "+".green(), &pkg.green())
+                    }
+                }
+            }
+
+            if *remove_untracked {
+                println!("{}", "sync --remove-untracked would remove the following programs");
+
+                // TODO(low, optimization): prevent excessive Vec and String allocations
+                let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !package_config.packages().contains(package)).collect();
+
+                for (untracked_package, required_by) in packages_required_by(untracked_packages)? {
+                    if required_by[0] == "None" {
+                        println!("{} {}", "-".red(), untracked_package.red() )
                     }
                 }
             }
@@ -226,8 +248,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             println!("System configuration: {:?}", &system_configuration);
             let new_groups = declareman::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
             
-            // TODO: refactor to separate function
             // TODO: handle absolute path
+            // BUG: file created in wrong location
             let mut file_path = config_manager.absolute_package_dir()?;
             file_path.set_extension("toml");
 

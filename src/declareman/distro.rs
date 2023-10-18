@@ -31,16 +31,24 @@ pub fn get_system_configuration() -> anyhow::Result<SystemConfiguration> {
 pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Result<GroupMap> {
     match system_config.distro.as_str() {
         ENDEAVOUR_OS => {
-            let package_url =
-              format!("https://raw.githubusercontent.com/endeavouros-team/EndeavourOS-packages-lists/master/{}", system_config.desktop);
-            let response = reqwest::blocking::get(package_url)?.text()?;
-            println!("{}", response);
+            let eos_package_list_base_url = "https://raw.githubusercontent.com/endeavouros-team/EndeavourOS-packages-lists/master/";
+            let url_path_base = "eos-base-group";
 
             let mut group_map : GroupMap = HashMap::new();
-            let package_group = PackageGroup {
-                members: response.lines().map(|x| x.to_owned()).collect()
-            };
-            group_map.insert(format!("{}-{}", system_config.distro, system_config.desktop), package_group);
+
+            for url_path in vec![url_path_base, &system_config.desktop] {
+
+                let package_url = format!("{}{}", eos_package_list_base_url, url_path);
+
+                // TODO(low, optimization): explore possibilities to run as async instead
+                let response = reqwest::blocking::get(package_url)?.text()?;
+                println!("{}", response);
+
+                let package_group = PackageGroup {
+                    members: response.lines().map(|x| x.to_owned()).collect()
+                };
+                group_map.insert(format!("{}-{}", system_config.distro, url_path), package_group);
+            }
             Ok(group_map)
         }
         _ => {

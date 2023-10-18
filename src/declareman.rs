@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, BTreeSet}, path::{PathBuf, Path}, process::{Command, Stdio}};
+use std::{collections::{HashMap, BTreeSet}, path::{PathBuf, Path}, process::{Command, Stdio}, ffi::OsStr};
 use std::io;
 use anyhow::Context;
 use thiserror::Error;
@@ -102,7 +102,29 @@ struct Target {
     pub root_group: GroupId,
 }
 
-pub fn install_packages(packages: &HashMap<String, PackageGroup>, install_group: &str) -> anyhow::Result<()> {
+// pub fn install_package(package: &str) -> anyhow::Result<()> {
+//     let _pacman_command = Command::new("pacman")
+//         .arg("-S")
+//         .arg(arg)
+// }
+
+pub fn install_packages<I, S>(packages: I) -> anyhow::Result<()>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let _pacman_command = Command::new("pacman")
+        .arg("-S")
+        .args(packages)
+        .stdin(Stdio::inherit())
+        .status()
+        .context("Failed to run pacman")?;
+    Ok(())
+}
+
+
+// TODO: move content to install_group_packages, instead take package &Vec<String>
+pub fn install_group_packages(packages: &HashMap<String, PackageGroup>, install_group: &str) -> anyhow::Result<()> {
     if let Some(root_group) = packages.get(install_group) {
         let _pacman_command = Command::new("pacman")
             .arg("-S")
