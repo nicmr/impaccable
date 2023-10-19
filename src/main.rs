@@ -3,8 +3,8 @@ mod declareman;
 
 
 use clap::Parser;
-use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}};
-use dialoguer::{Confirm, Editor};
+use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}, pacman};
+use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
 use std::io::Write;
@@ -96,7 +96,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 println!("Please select a new active target");
 
                 let targets : Vec<&String> = config_manager.config().targets.keys().collect();
-                let selection = match dialoguer::Select::with_theme(&dialoguer::theme::ColorfulTheme::default())
+                let selection = match Select::with_theme(&ColorfulTheme::default())
                     .items(&targets)
                     .interact_opt() {
                         Ok(Some(sel)) => {
@@ -127,7 +127,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Some(CliCommand::Sync { remove_untracked }) => {
 
-            let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
+            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             // let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
             let not_installed : BTreeSet<String> = package_config.packages().iter().cloned().filter(|package| !pacman_installed.contains(package)).collect();
             install_packages(not_installed).context("Failed to install missing packages")?;
@@ -181,7 +181,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         }
         Some(CliCommand::Diff { untracked }) => {
-            let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
+            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
 
             use colored::Colorize;
@@ -208,7 +208,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         
         Some(CliCommand::Plan { remove_untracked }) => {
-            let pacman_installed = declareman::pacman::query_installed().context("Failed to query installed packages")?;
+            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             // let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
 
             // let intersection_by_group = declareman::group_intersection(package_config.groups, &pacman_installed);
@@ -249,15 +249,70 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             let new_groups = declareman::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
             
             // TODO: handle absolute path
-            // BUG: file created in wrong location
             let mut file_path = config_manager.absolute_package_dir()?;
+            file_path.push(system_configuration.distro);
             file_path.set_extension("toml");
 
             let mut file = File::create(file_path).context("Failed to create file for new package group")?;
             let toml = toml::ser::to_string_pretty(&new_groups)?;
             write!(file, "{}", toml)?;
         }
-        None => {}
+        None => {},
+
+        Some(CliCommand::Import) => {
+            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            // TODO(low, optimization): prevent excessive Vec and String allocations
+            let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !package_config.packages().contains(package)).collect();
+
+            let multi_selection = match MultiSelect::with_theme(&ColorfulTheme::default())
+                // BUG(low, ux, upstream?): prompt only shows on second page if paginated
+                // check if bug is fixable or provide dialog beforehand explaining what to do
+                .with_prompt("Select the packages you would like to import into your configuration")
+                .items(&untracked_packages)
+                .interact_opt() {
+                    Ok(Some(sel)) => sel,
+                    Ok(None) => {
+                        bail!("Package selection aborted")
+                    },
+                    Err(_err) => {
+                        bail!("Package selection crashed")
+                    },
+                };
+            if multi_selection.len() < 1 {
+                return Ok(());
+            }
+
+            let groups: Vec<&String> = package_config.groups.keys().collect();
+
+            let group_selection = match FuzzySelect::with_theme(&ColorfulTheme::default())
+                .with_prompt("Select the group to add the packages to")
+                .item("New group")
+                .items(&groups)
+                .interact_opt() {
+                    Ok(Some(sel)) => sel,
+                    Ok(None) => {
+                        bail!("Group selection aborted")
+                    },
+                    Err(_err) => {
+                        bail!("Group selection crashed")
+                    },
+                };
+
+            // Check if new group was selected
+            if group_selection == 0 {
+                // create group
+                let new_group_name: String = Input::with_theme(&ColorfulTheme::default())
+                    .with_prompt("Name for new group")
+                    // TODO(low, limitation): only ascii characters allowed by interact_text
+                    .interact_text().context("Failed to get new group name")?;
+                
+                println!("{}", new_group_name);
+            } else {
+                // requires decrement by 1 because new group item is prepended
+                println!("{}", groups[group_selection-1])
+            }
+            // add packages to group
+        }
     }
     Ok(())
 }

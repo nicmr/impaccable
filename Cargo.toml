@@ -10,7 +10,7 @@ authors = ["Nicolas Mohr"]
 anyhow = "1.0.69"
 clap = {version = "4.1.6", features = ["derive"]}
 colored = "2.0.4"
-dialoguer = "0.10.3"
+dialoguer = {version = "0.10.3", features = ["fuzzy-select"] }
 directories = "4.0.1"
 log = "0.4.17"
 os-release = "0.1.0"

@@ -19,7 +19,7 @@ fn re_package_required_by() -> &'static Regex {
 }
 
 /// Queries what packages are installed on the system
-pub fn query_installed() -> anyhow::Result<BTreeSet<String>> {
+pub fn query_explicitly_installed() -> anyhow::Result<BTreeSet<String>> {
     let pacman_output_bytes = Command::new("pacman")
         .arg("-Qqe")
         .output()

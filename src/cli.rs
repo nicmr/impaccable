@@ -41,8 +41,6 @@ pub enum CliCommand {
     #[command(subcommand)]
     Target(Target),
 
-    // Try, // should this be add --trial instead?
-
     /// Compare your target with the active package configuration
     Diff {
         /// Also output untracked packages
@@ -59,6 +57,9 @@ pub enum CliCommand {
 
     /// Get a package template for your Arch-based distro
     Template,
+
+    /// Import packages existing on your system into your config
+    Import,
 
     // Review / import 
     //    // untracked / trials
