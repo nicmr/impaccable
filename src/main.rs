@@ -3,7 +3,7 @@ mod declareman;
 
 
 use clap::Parser;
-use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}, pacman};
+use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
@@ -217,7 +217,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
             use colored::Colorize;
 
-            println!("{}", "Sync would install the following programs");
+            println!("Sync would install the following programs");
 
             for (group, missing_packages) in not_installed_by_group {
                 if !missing_packages.members.is_empty() {
@@ -229,7 +229,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
 
             if *remove_untracked {
-                println!("{}", "sync --remove-untracked would remove the following programs");
+                println!("sync --remove-untracked would remove the following programs");
 
                 // TODO(low, optimization): prevent excessive Vec and String allocations
                 let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !package_config.packages().contains(package)).collect();
@@ -278,7 +278,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                         bail!("Package selection crashed")
                     },
                 };
-            if multi_selection.len() < 1 {
+            if multi_selection.is_empty() {
                 return Ok(());
             }
 

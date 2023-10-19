@@ -36,7 +36,7 @@ pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Re
 
             let mut group_map : GroupMap = HashMap::new();
 
-            for url_path in vec![url_path_base, &system_config.desktop] {
+            for url_path in &[url_path_base, &system_config.desktop] {
 
                 let package_url = format!("{}{}", eos_package_list_base_url, url_path);
 
