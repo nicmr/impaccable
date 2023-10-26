@@ -1,12 +1,16 @@
-use std::{collections::{HashMap, BTreeSet}, path::{PathBuf, Path}, process::{Command, Stdio}, ffi::OsStr};
-use std::io;
+use std::{collections::{HashMap, BTreeSet, BTreeMap}, process::{Command, Stdio}};
 use anyhow::Context;
-use thiserror::Error;
+
 use serde::{Deserialize, Serialize};
 
 pub mod pacman;
 pub mod distro;
 pub mod config;
+
+pub mod error;
+
+pub use error::Error;
+type Result<T> = std::result::Result<T, Error>;
 
 // TODO: add custom result type. Maybe with shorter name?
 // pub type DeclaremanResult<T> = Result<T, DeclaremanError>;
@@ -19,82 +23,29 @@ pub struct TargetConfig {
 
 
 
-#[derive(Error, Debug)]
-pub enum DeclaremanError {
-    #[error("Root package `{0}` not found")]
-    RootPackageNotFound(String),
-    // NotEnoughArguments("")
-    #[error("Group `{group}` not found")]
-    GroupNotFound {
-        group: String,
-    },
-    // TODO: create error implementation per use case instead
-    // https://kazlauskas.me/entries/errors
-    #[error(transparent)]
-    Io {
-        #[from]
-        source: io::Error,
-    },
-    #[error("Failed to serialize to toml")]
-    SerializeFailure {
-        #[from]
-        source: toml::ser::Error,
-    },
-    #[error("Failed to deserialize from toml")]
-    DeserializeFailure {
-        #[from]
-        source: toml::de::Error,
-    },
-}
 
 pub type PackageId = String;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackageGroup {
     pub members: BTreeSet<PackageId>
-} 
+}
 
 impl PackageGroup {
-    pub fn new(members: BTreeSet<PackageId>) -> Self {
+    pub fn new() -> Self {
+        Self {
+            members: BTreeSet::new()
+        }
+    }
+    pub fn from_members(members: BTreeSet<PackageId>) -> Self {
         Self { members }
     } 
 }
 
 pub type GroupId = String;
-type GroupMap = HashMap<GroupId, PackageGroup>;
 
-/// Stores the files package groups are stored in. 
-/// Bidirectional, whereas 1 file maps to N groups
-#[derive(Debug, Default)]
-struct GroupFiles {
-    group_to_file: HashMap<GroupId, PathBuf>,
-    file_to_groups: HashMap<PathBuf, Vec<GroupId>>,
-}
-
-impl GroupFiles {
-    fn add_group(&mut self, file_path: PathBuf, group_name: GroupId) {
-        self.group_to_file.insert(group_name.clone(), file_path.clone());
-
-        match self.file_to_groups.get_mut(&file_path) {
-            Some(groups) => groups.push(group_name),
-            None => {self.file_to_groups.insert(file_path, vec![group_name]);},
-        }
-    }
-
-    fn file(&self, group: &GroupId) -> Option<&PathBuf> {
-        self.group_to_file.get(group)
-    }
-
-    fn groups(&self, file_path: &Path) -> Option<&Vec<GroupId>> {
-        self.file_to_groups.get(file_path)
-    }
-
-    /// Returns the containing file and all groups in the same file
-    fn groups_in_same_file(&self, group: &GroupId) -> Option<(&PathBuf, &Vec<GroupId>)> {
-        let file = self.file(group)?;
-        self.groups(file).map(|groups| (file, groups))
-    }
-}
+// TODO(hight): decide whether to use this alias or not
+type GroupMap = BTreeMap<GroupId, PackageGroup>;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Target {
@@ -102,29 +53,10 @@ struct Target {
     pub root_group: GroupId,
 }
 
-// pub fn install_package(package: &str) -> anyhow::Result<()> {
-//     let _pacman_command = Command::new("pacman")
-//         .arg("-S")
-//         .arg(arg)
-// }
-
-pub fn install_packages<I, S>(packages: I) -> anyhow::Result<()>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let _pacman_command = Command::new("pacman")
-        .arg("-S")
-        .args(packages)
-        .stdin(Stdio::inherit())
-        .status()
-        .context("Failed to run pacman")?;
-    Ok(())
-}
 
 
-// TODO: move content to install_group_packages, instead take package &Vec<String>
-pub fn install_group_packages(packages: &HashMap<String, PackageGroup>, install_group: &str) -> anyhow::Result<()> {
+// TODO: move to pacman module
+pub fn install_group_packages(packages: &BTreeMap<GroupId, PackageGroup>, install_group: &str) -> anyhow::Result<()> {
     if let Some(root_group) = packages.get(install_group) {
         let _pacman_command = Command::new("pacman")
             .arg("-S")
@@ -134,10 +66,9 @@ pub fn install_group_packages(packages: &HashMap<String, PackageGroup>, install_
             .context("Failed to run pacman")?;
         Ok(())
     } else {
-        Err(anyhow::Error::from(DeclaremanError::RootPackageNotFound(String::from(install_group))))
+        Err(anyhow::Error::from(Error::RootPackageNotFound(String::from(install_group))))
     }
 }
-
 
 pub fn group_intersection(packages_by_group: HashMap<String, PackageGroup>, with_set: &BTreeSet<String>) -> HashMap<String, PackageGroup> {
     let mut intersections_by_group = HashMap::with_capacity(packages_by_group.len());

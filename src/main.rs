@@ -3,7 +3,7 @@ mod declareman;
 
 
 use clap::Parser;
-use declareman::{install_packages, config::{DeclaremanConfigManager, ActiveTarget}};
+use declareman::{config::{DeclaremanConfigManager, ActiveTarget}, pacman, PackageId};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
@@ -11,7 +11,7 @@ use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target, Groups};
 
-use crate::declareman::pacman::packages_required_by;
+use crate::declareman::{pacman::packages_required_by, PackageGroup};
 
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
@@ -122,6 +122,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
     };
 
     match &cli.command {
+        None => {},
         Some(CliCommand::Config) => {
             println!("config: {:?}", config_manager.config());
         }
@@ -129,25 +130,27 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
             let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             // let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
-            let not_installed : BTreeSet<String> = package_config.packages().iter().cloned().filter(|package| !pacman_installed.contains(package)).collect();
-            install_packages(not_installed).context("Failed to install missing packages")?;
+
+            // TODO(high, bug): use target-specific root groups instead of global root groups, retire global root groups
+            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&config_manager.config().root_groups).collect();
+
+            // TODO(low, optimization): Might be benign, but check if this canbe done with one less level of referencing
+            let not_installed = should_be_installed.iter().filter(|package| !pacman_installed.contains(**package));
+            pacman::install_packages(not_installed).context("Failed to install missing packages")?;
             
             if *remove_untracked {
-                let untracked_packages = pacman_installed.iter().cloned().filter(|package| package_config.packages().contains(package));
+                let untracked_packages = pacman_installed.iter().cloned().filter(|package| should_be_installed.contains(package));
                 let _uninstall_exit_status = declareman::pacman::uninstall_packages(untracked_packages)?;
             }
             // install_group_packages(&package_config.groups, &config_manager.config().root_group)?;
         }
         Some(CliCommand::Add { packages, group }) => {
-            let unique_packages = packages.clone().into_iter().collect();
+            let unique_packages : BTreeSet<PackageId> = packages.clone().into_iter().collect();
             package_config.add_packages(unique_packages, group).context("Failed to add packages")?;
             println!("Added the following packages{:?}", packages);
         }
-        Some(CliCommand::Remove { package }) => {
-            let removed_from_groups = package_config.remove_package(package);
-
-            println!("Removed from the following groups: {:?}", removed_from_groups)
-            // TODO: BUG: currently, remove does not perform a save, this has to be fixed
+        Some(CliCommand::Remove { package, group }) => {
+            package_config.remove_package(package, group)?
         }
         Some(CliCommand::Target(subcommand)) => {
             match subcommand {
@@ -176,50 +179,31 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Some(CliCommand::Groups(subcommand)) => {
             match subcommand {
                 Groups::Ls => {
-                    package_config.groups.keys().for_each(|group_name| println!("{}", group_name))
+                    package_config.iter_groups().for_each(|(group_name, _)| println!("{}", group_name))
                 }
             }
         }
-        Some(CliCommand::Diff { untracked }) => {
-            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
-            let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
-
-            use colored::Colorize;
-
-            // TODO: Consider making this section optional
-            println!("{}", "Installed on the system".blue());
-            for pkg in intersection.iter() {
-                println!("{}", pkg.blue())
-            }
-
-            let not_installed : BTreeSet<String>= package_config.packages().iter().cloned().filter(|package| !intersection.contains(package)).collect();
-            println!("{}", "Not installed on the system:".green());
-            for pkg in not_installed {
-                println!("{}", &pkg.green())
-            }
-            
-            if *untracked {
-                println!("Untracked packages:");
-                let untracked_packages : BTreeSet<String> = pacman_installed.iter().cloned().filter(|package| !intersection.contains(package)).collect();
-                for pkg in untracked_packages {
-                    println!("{}", &pkg)
-                }
-            }
-        }
-        
         Some(CliCommand::Plan { remove_untracked }) => {
             let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
-            // let intersection : BTreeSet<String> = pacman_installed.intersection(&package_config.packages()).cloned().collect();
+            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&config_manager.config().root_groups).collect();
 
-            // let intersection_by_group = declareman::group_intersection(package_config.groups, &pacman_installed);
-
-            let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
-
+            let not_installed_by_group : Vec<(&PackageId, PackageGroup)> =
+                package_config
+                    .iter_groups()
+                    .map(|(name, package_contents)|{
+                        let not_installed : BTreeSet<PackageId> = package_contents.members.clone()
+                            .into_iter()
+                            .filter(|package| !pacman_installed.contains(package)).collect();
+                        (name, PackageGroup::from_members(not_installed))
+                    })
+                    .collect();
+                
             use colored::Colorize;
 
             println!("Sync would install the following programs");
 
             for (group, missing_packages) in not_installed_by_group {
+                // only display groups that have missing packages
                 if !missing_packages.members.is_empty() {
                     println!("{}", format!("From group '{}':", group).green());
                     for pkg in missing_packages.members {
@@ -231,8 +215,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             if *remove_untracked {
                 println!("sync --remove-untracked would remove the following programs");
 
-                // TODO(low, optimization): prevent excessive Vec and String allocations
-                let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !package_config.packages().contains(package)).collect();
+                // TODO: doesn't track groups
+                let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
+
 
                 for (untracked_package, required_by) in packages_required_by(untracked_packages)? {
                     if required_by[0] == "None" {
@@ -257,14 +242,15 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             let toml = toml::ser::to_string_pretty(&new_groups)?;
             write!(file, "{}", toml)?;
         }
-        None => {},
 
         Some(CliCommand::Import) => {
             let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
-            // TODO(low, optimization): prevent excessive Vec and String allocations
-            let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !package_config.packages().contains(package)).collect();
+            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&config_manager.config().root_groups).collect();
 
-            let multi_selection = match MultiSelect::with_theme(&ColorfulTheme::default())
+            // TODO(low, optimization): prevent excessive Vec and String allocations
+            let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
+
+            let selected_package_indices = match MultiSelect::with_theme(&ColorfulTheme::default())
                 // BUG(low, ux, upstream?): prompt only shows on second page if paginated
                 // check if bug is fixable or provide dialog beforehand explaining what to do
                 .with_prompt("Select the packages you would like to import into your configuration")
@@ -278,11 +264,11 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                         bail!("Package selection crashed")
                     },
                 };
-            if multi_selection.is_empty() {
+            if selected_package_indices.is_empty() {
                 return Ok(());
             }
 
-            let groups: Vec<&String> = package_config.groups.keys().collect();
+            let groups: Vec<&String> = package_config.iter_groups().map(|(name, _)| name).collect();
 
             let group_selection = match FuzzySelect::with_theme(&ColorfulTheme::default())
                 .with_prompt("Select the group to add the packages to")
@@ -298,20 +284,35 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                     },
                 };
 
-            // Check if new group was selected
-            if group_selection == 0 {
-                // create group
+            let group_id = {
+                // Check if new group was selected and create new group
+                if group_selection == 0 {
                 let new_group_name: String = Input::with_theme(&ColorfulTheme::default())
                     .with_prompt("Name for new group")
                     // TODO(low, limitation): only ascii characters allowed by interact_text
                     .interact_text().context("Failed to get new group name")?;
                 
-                println!("{}", new_group_name);
-            } else {
-                // requires decrement by 1 because new group item is prepended
-                println!("{}", groups[group_selection-1])
-            }
-            // add packages to group
+                    println!("{}", new_group_name);
+
+
+                    // TODO:<
+                    // ask for file the new group should be stored in ``
+                    // create new group
+
+                    new_group_name
+                } else {
+                    // requires decrement by 1 because new group item was prepended
+                    println!("{}", groups[group_selection-1]);
+                    groups[group_selection-1].to_string()
+                }
+            };
+
+            let selected_packages: BTreeSet<String> = 
+                selected_package_indices
+                    .iter()
+                    .map(|index| untracked_packages[*index].clone())
+                    .collect();
+            package_config.add_packages(selected_packages, &group_id).context("Failed to add packages")?;
         }
     }
     Ok(())

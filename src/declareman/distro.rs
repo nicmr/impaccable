@@ -1,10 +1,10 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::bail;
 
 use crate::declareman::PackageGroup;
 
-use super::GroupMap;
+use super::GroupId;
 
 const ENDEAVOUR_OS : &str = "EndeavourOS";
 
@@ -23,18 +23,18 @@ pub fn get_system_configuration() -> anyhow::Result<SystemConfiguration> {
                 desktop
             })
         },
-        // TODO: print detected distro
+        // TODO(low, ux): print detected distro so users can check if it's correct
         _ => bail!("Distro not supported for package templating"),
     }
 }
 
-pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Result<GroupMap> {
+pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Result<BTreeMap<GroupId, PackageGroup>> {
     match system_config.distro.as_str() {
         ENDEAVOUR_OS => {
             let eos_package_list_base_url = "https://raw.githubusercontent.com/endeavouros-team/EndeavourOS-packages-lists/master/";
             let url_path_base = "eos-base-group";
 
-            let mut group_map : GroupMap = HashMap::new();
+            let mut group_map : BTreeMap<GroupId, PackageGroup> = BTreeMap::new();
 
             for url_path in &[url_path_base, &system_config.desktop] {
 

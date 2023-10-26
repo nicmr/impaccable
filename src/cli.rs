@@ -33,22 +33,20 @@ pub enum CliCommand {
         #[arg(short, long, required=true)]
         group: String,
     },
-    /// Remove a package from groups your target is using
+    /// Remove a package from specified group is using
     Remove {
         #[arg(required=true)]
         package: String,
+
+        #[arg(short, long, required=true)]
+        group: String,
+
+        // TODO(high, UX): add active flag to just remove packages from active configuration if possible. make default?
     },
     #[command(subcommand)]
     Target(Target),
 
-    /// Compare your target with the active package configuration
-    Diff {
-        /// Also output untracked packages
-        #[arg(short, long)]
-        untracked: bool
-    },
-
-    /// Check what changes a Sync would apply
+      /// Check what changes a Sync would apply
     Plan {
         /// Evaluate what changes sync with this flag would apply
         #[arg(long)]
