@@ -8,7 +8,6 @@ pub const INVALID_UNICODE_DISPLAY: &str = "<invalid unicode>";
 
 
 // TODO(low): split error into separate errors for package, group, file(?)
-// TODO(medium, ergonomics): rename to just error
 #[derive(Error, Debug)]
 pub enum Error {
     // not found errors

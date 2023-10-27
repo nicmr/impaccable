@@ -23,12 +23,11 @@ where
     Ok(())
 }
 
-/// Ensures the contained regex is only compiled once to avoid performance impact in loops
+/// Ensures the contained regex is only compiled once to avoid performance impact in loops.
 /// Thread-safe due to usage of OnceLock
 fn re_package_required_by() -> &'static Regex {
     static RE : OnceLock<Regex> = OnceLock::new();
-    // TODO: separate test that ensures regex always compiles
-    // so this never fails at runtime
+    // test ensuring this never panics: tests::test_required_by_regex_valid
     RE.get_or_init(|| Regex::new(RE_PACKAGE_REQUIRED_BY).unwrap())
 }
 
@@ -88,17 +87,17 @@ pub fn packages_required_by(packages: Vec<String>) -> anyhow::Result<Vec<(String
     // use OsStr instead - effectively not a problem on linux
     // because strings are utf-8, but might cause issues on other OS if that is ever relevant 
     let pacman_output_str = std::str::from_utf8(&pacman_output_bytes).context("Failed to parse pacman stdout as utf8")?;
-    let dependants = parse_required_by_many(pacman_output_str)?;
+    let dependants = parse_required_by_many(pacman_output_str, Some(packages.len()))?;
 
     Ok(packages.into_iter().zip(dependants).collect())
 }
-   
-fn parse_required_by_many(pacman_output: &str) -> anyhow::Result<Vec<Vec<String>>> {
-    
-    // TODO(low, optimiztion): get capactiy, init with capacity
-    let mut result = Vec::new();
 
-    // separate into the chunks concerning each package
+/// Parses the `Required By` attribute of the pacman output for many packages.
+/// Optionally takes the package count for vec init optimization
+fn parse_required_by_many(pacman_output: &str, opt_package_count: Option<usize>) -> anyhow::Result<Vec<Vec<String>>> {
+    let mut result = Vec::with_capacity(opt_package_count.unwrap_or(0));
+
+    // separate into the chunks for each package
     // skips the first empty part because the data starts with the "delimiter"
     for single_package_chunkj in pacman_output.split("Name").skip(1) {
         let package_dependents = parse_required_by(single_package_chunkj)?;
@@ -107,13 +106,13 @@ fn parse_required_by_many(pacman_output: &str) -> anyhow::Result<Vec<Vec<String>
     Ok(result)
 }
 
-/// Parses the packages required
+/// Parses the `Required by` attribute of the pacman output for a single package
 // TODO(medium, ergonomics): check for "None" in "Required By"
 // and return option accordingly
 fn parse_required_by(pacman_output: &str) -> anyhow::Result<Vec<String>> {
     let re = re_package_required_by();
     let Some(caps) = re.captures(pacman_output) else {
-        // TODO: check if this and to be expected if there are no dependants
+        // TODO: check if the field is always presen with None if there are no dependants
         // consider also parsing the "None" case
         bail!("No matches for 'Required by'");
     };
@@ -185,6 +184,11 @@ Install Reason  : Explicitly installed
 Install Script  : Yes
 Validated By    : Signature
 "#;
+
+    #[test]
+    fn test_required_by_regex_valid() {
+        Regex::new(RE_PACKAGE_REQUIRED_BY).unwrap();
+    }
 
     #[test]
     fn test_parse_required_by() {

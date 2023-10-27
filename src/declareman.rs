@@ -2,10 +2,12 @@ use std::collections::{BTreeSet, BTreeMap};
 
 use serde::{Deserialize, Serialize};
 
-pub mod pacman;
-pub mod distro;
+/// Configuration files
 pub mod config;
-
+/// Interaction with the pacman CLI
+pub mod pacman;
+/// Custom distro support for templating the package configurations
+pub mod distro;
 pub mod error;
 
 pub use error::Error;

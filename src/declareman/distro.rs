@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::format};
 
 use anyhow::bail;
 
@@ -7,8 +7,6 @@ use crate::declareman::PackageGroup;
 use super::GroupId;
 
 const ENDEAVOUR_OS : &str = "EndeavourOS";
-
-/// Custom distro support for templating your packages
 
 pub fn get_system_configuration() -> anyhow::Result<SystemConfiguration> {
     let os_release = os_release::OsRelease::new()?;
@@ -23,8 +21,7 @@ pub fn get_system_configuration() -> anyhow::Result<SystemConfiguration> {
                 desktop
             })
         },
-        // TODO(low, ux): print detected distro so users can check if it's correct
-        _ => bail!("Distro not supported for package templating"),
+        _ => bail!(format!("Distro not supported for package templating: {}", &distro)),
     }
 }
 
@@ -52,10 +49,9 @@ pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Re
             Ok(group_map)
         }
         _ => {
-            bail!("Distro not supported for package templating")
+            bail!(format!("Distro not supported for package templating: {}", &system_config.distro))
         }
     }
-
 }
 
 #[derive(Debug, Clone)]

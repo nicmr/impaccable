@@ -41,7 +41,7 @@ pub enum CliCommand {
         #[arg(short, long, required=true)]
         group: String,
 
-        // TODO(high, UX): add active flag to just remove packages from active configuration if possible. make default?
+        // TODO(low, UX): add active flag to just remove packages from active configuration if possible. make default?
     },
     #[command(subcommand)]
     Target(Target),

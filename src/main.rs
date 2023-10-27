@@ -217,9 +217,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             if *remove_untracked {
                 println!("sync --remove-untracked would remove the following programs");
 
-                // TODO: doesn't track groups
                 let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
-
 
                 for (untracked_package, required_by) in packages_required_by(untracked_packages)? {
                     if required_by[0] == "None" {
