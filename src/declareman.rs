@@ -18,7 +18,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TargetConfig {
-    pub root_groups: Vec<GroupId>
+    pub root_groups: BTreeSet<GroupId>
 }
 
 

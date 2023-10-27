@@ -25,7 +25,6 @@ impl DeclaremanConfigManager {
     }
 
     pub fn config(&self) -> &DeclaremanConfig { &self.config }
-    pub fn config_path(&self) -> &Path { &self.config_path }
 
     // TODO: remove unwrap
     // TODO: think about - wouldn't it make things considerably easier if package dir config option
@@ -48,7 +47,6 @@ impl DeclaremanConfigManager {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeclaremanConfig {
-    pub root_groups: BTreeSet<GroupId>,
     pub package_dir: PathBuf,
     pub targets: BTreeMap<TargetId, TargetConfig>
 }
@@ -64,7 +62,6 @@ impl DeclaremanConfig {
             TargetConfig { root_groups: [String::from("awesome_software")].into() }
         );
         Self {
-            root_groups : BTreeSet::from(["myrootgroup".to_string()]),
             package_dir : "./packages".into(),
             targets,
         }

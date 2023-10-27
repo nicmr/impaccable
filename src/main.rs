@@ -6,7 +6,7 @@ use clap::Parser;
 use declareman::{config::{DeclaremanConfigManager, ActiveTarget}, pacman, PackageId};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
-use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
+use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet, fmt::format};
 use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target, Groups};
@@ -21,18 +21,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
     let default_project_dirs = ProjectDirs::from("dev.nicolasmohr.declareman", "Declareman Devs", "declareman")
     .expect("Failed to compute ProjectDirs");
 
-    let config_path = {
-        if let Some(cli_config_override) = cli.config {
-            cli_config_override
-        }
-        else if let Ok(env_config_override) = env::var("DECLAREMAN_CONFIG") {
-            PathBuf::from(env_config_override)
-        } else {
-            let mut default_config_path = default_project_dirs.config_dir().to_path_buf();
-            default_config_path.push("config.toml");
-            default_config_path
-        }
-    };
+    
 
     let active_target_path = {
         if let Some(cli_target_override) = cli.target {
@@ -46,9 +35,20 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
     };
 
-
-
     let config_manager : declareman::config::DeclaremanConfigManager = {
+        let config_path = {
+            if let Some(cli_config_override) = cli.config {
+                cli_config_override
+            }
+            else if let Ok(env_config_override) = env::var("DECLAREMAN_CONFIG") {
+                PathBuf::from(env_config_override)
+            } else {
+                let mut default_config_path = default_project_dirs.config_dir().to_path_buf();
+                default_config_path.push("config.toml");
+                default_config_path
+            }
+        };
+
         let config_string = match fs::read_to_string(&config_path) {
             Ok(s) => s,
             Err(err) => match err.kind() {
@@ -131,8 +131,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             // let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
 
-            // TODO(high, bug): use target-specific root groups instead of global root groups, retire global root groups
-            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&config_manager.config().root_groups).collect();
+            let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
+            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
 
             // TODO(low, optimization): Might be benign, but check if this canbe done with one less level of referencing
             let not_installed = should_be_installed.iter().filter(|package| !pacman_installed.contains(**package));
@@ -185,7 +185,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Some(CliCommand::Plan { remove_untracked }) => {
             let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
-            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&config_manager.config().root_groups).collect();
+
+            let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
+            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
 
             let not_installed_by_group : Vec<(&PackageId, PackageGroup)> =
                 package_config
@@ -245,7 +247,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
         Some(CliCommand::Import) => {
             let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
-            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&config_manager.config().root_groups).collect();
+            
+            let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
+            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
 
             // TODO(low, optimization): prevent excessive Vec and String allocations
             let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
