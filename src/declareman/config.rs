@@ -7,7 +7,7 @@ use std::io::Write;
 
 use crate::declareman;
 
-use super::{GroupId, TargetConfig, Error, PackageId, PackageGroup};
+use super::{GroupId, Error, PackageId, PackageGroup};
 
 use std::iter::Extend;
 
@@ -66,6 +66,11 @@ impl DeclaremanConfig {
             targets,
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TargetConfig {
+    pub root_groups: BTreeSet<GroupId>
 }
 
 #[derive(Debug, Default, Clone)]

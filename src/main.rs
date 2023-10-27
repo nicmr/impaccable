@@ -6,7 +6,7 @@ use clap::Parser;
 use declareman::{config::{DeclaremanConfigManager, ActiveTarget}, pacman, PackageId};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
-use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet, fmt::format};
+use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
 use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target, Groups};

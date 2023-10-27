@@ -7,7 +7,6 @@ Additional features:
 - add ability to add groups as subgroups of others (or not? too complicated)
 
 Bugs
-- use target-specific root groups instead of global root groups, retire global root groups
 - plan / sync is listing packages that are already installed :/
 
 Refactors:

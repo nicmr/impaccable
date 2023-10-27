@@ -133,6 +133,8 @@ fn parse_required_by(pacman_output: &str) -> anyhow::Result<Vec<String>> {
 mod tests {
     use super::*;
 
+    // these become hard to read as all caps, only used in tests
+    #[allow(non_upper_case_globals)]
     const pacman_Qi_output_xorg : &str =
 r#"Name            : xorg-server
 Version         : 21.1.8-2
@@ -158,6 +160,7 @@ Install Script  : Yes
 Validated By    : Signature
 "#;
 
+    #[allow(non_upper_case_globals)]
     const pacman_Qi_output_lightdm_slick : &str =
 r#"Name            : eos-lightdm-slick-theme
 Version         : 3.2-1
