@@ -1,4 +1,4 @@
-# declareman
+# impaccable
 
 A mildly declarative pacman wrapper for Arch Linux.
 
@@ -15,12 +15,12 @@ A mildly declarative pacman wrapper for Arch Linux.
 
 ```bash
 # directly from git
-cargo install --git https://github.com/nicmr/declareman
+cargo install --git https://github.com/nicmr/impaccable
 ```
 
 ```bash
 # clone the repo
-git clone https://github.com/nicmr/declareman && cd declareman
+git clone https://github.com/nicmr/impaccable && cd impaccable
 # install with cargo
 cargo install --path .
 ```
@@ -32,11 +32,11 @@ WIP
 ## Setting up a new system
 
 ```bash
-yay -S declareman
+yay -S impaccable
 # clone your repo
 git clone https://git.example.com/your/dotfiles .dotfiles
 cd .dotfiles
 # set up dotfiles using your dotfile manager, e.g. dotter
 # dotter deploy
-declareman sync
+impaccable sync
 ```

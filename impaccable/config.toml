@@ -1,0 +1,11 @@
+root_group = "nicmr-base"
+package_dir = "packages"
+
+[targets.amd_desktop]
+# root_groups = ["nicmr-base", "amd-desktop"]
+root_groups = ["nicmr-base"]
+
+
+[targets.work_laptop]
+# root_group = ["nicmr-base", "power-management"]
+root_groups = ["nicmr-base"]

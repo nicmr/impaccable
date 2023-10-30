@@ -9,20 +9,6 @@ const RE_PACKAGE_REQUIRED_BY: &str = pomsky!(
     "Required By"[s]+": ":(((package_name_char+)' '*)+ | "None")
 );
 
-pub fn install_packages<I, S>(packages: I) -> anyhow::Result<()>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let _pacman_command = Command::new("pacman")
-        .arg("-S")
-        .args(packages)
-        .stdin(Stdio::inherit())
-        .status()
-        .context("Failed to run pacman")?;
-    Ok(())
-}
-
 /// Ensures the contained regex is only compiled once to avoid performance impact in loops.
 /// Thread-safe due to usage of OnceLock
 fn re_package_required_by() -> &'static Regex {
@@ -47,7 +33,23 @@ pub fn query_explicitly_installed() -> anyhow::Result<BTreeSet<String>> {
     Ok(installed_set)
 }
 
-/// Uninstalls the passed packages
+/// Installs the supplied packages.
+pub fn install_packages<I, S>(packages: I) -> anyhow::Result<()>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let _pacman_command = Command::new("pacman")
+        .arg("-S")
+        .args(packages)
+        .stdin(Stdio::inherit())
+        .status()
+        .context("Failed to run pacman")?;
+    Ok(())
+}
+
+
+/// Uninstalls the supplied packages.
 pub fn uninstall_packages<I, S>(packages: I) -> anyhow::Result<ExitStatus>
 where
     I: IntoIterator<Item = S>,

@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fmt::format};
 
 use anyhow::bail;
 
-use crate::declareman::PackageGroup;
+use crate::impaccable::PackageGroup;
 
 use super::GroupId;
 

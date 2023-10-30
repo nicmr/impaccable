@@ -5,26 +5,26 @@ use serde::{Serialize, Deserialize};
 use walkdir::WalkDir;
 use std::io::Write;
 
-use crate::declareman;
+use crate::impaccable;
 
 use super::{GroupId, Error, PackageId, PackageGroup};
 
 use std::iter::Extend;
 
-pub struct DeclaremanConfigManager {
+pub struct ConfigManager {
     config_path: PathBuf,
-    config: DeclaremanConfig,
+    config: Config,
 }
 
-impl DeclaremanConfigManager {
-    pub fn new(config_path: PathBuf, config: DeclaremanConfig) -> Self {
+impl ConfigManager {
+    pub fn new(config_path: PathBuf, config: Config) -> Self {
         Self {
             config_path,
             config,
         }
     }
 
-    pub fn config(&self) -> &DeclaremanConfig { &self.config }
+    pub fn config(&self) -> &Config { &self.config }
 
     // TODO: remove unwrap
     // TODO: think about - wouldn't it make things considerably easier if package dir config option
@@ -46,12 +46,12 @@ impl DeclaremanConfigManager {
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DeclaremanConfig {
+pub struct Config {
     pub package_dir: PathBuf,
     pub targets: BTreeMap<TargetId, TargetConfig>
 }
 
-impl DeclaremanConfig {
+impl Config {
     /// Creates an instance of `Self` with placeholder values to template the config file
     /// 
     pub fn template() -> Self {
@@ -93,7 +93,7 @@ impl PackageFile {
 
 impl PackageConfiguration{
     /// Parses a package directory to generate a corresponding `PackageConfiguration`
-    fn parse(package_dir: &Path) -> declareman::Result<Self> {
+    fn parse(package_dir: &Path) -> impaccable::Result<Self> {
         let mut package_configuration = PackageConfiguration::default();
 
         for entry in WalkDir::new(package_dir)
@@ -114,7 +114,7 @@ impl PackageConfiguration{
 
     /// Creates a new group in the package file at the specified `file_path`.
     /// Returns Err if the file does not exist or the group alreaddy exists in said file
-    pub fn create_group(&mut self, group_id: &GroupId, file_path: &Path) -> declareman::Result<()> {
+    pub fn create_group(&mut self, group_id: &GroupId, file_path: &Path) -> impaccable::Result<()> {
         let Some(package_file) = self.files.get_mut(file_path) else {
             return Err(Error::PackageFileNotFound{ package_file: file_path.to_owned()})
         };
@@ -128,8 +128,7 @@ impl PackageConfiguration{
         }
     }
 
-    // TODO(low, ergonomics): consider taking iterator
-    // TODO(low, errors): try to return declareman::Result instead
+    /// Returns an iterator over the packages contained by the specified groups.
     pub fn packages_of_groups<'a>(&'a self, groups: &'a BTreeSet<GroupId>) -> impl Iterator<Item = &PackageId> + 'a  {
         self.files
             .iter()
@@ -140,11 +139,11 @@ impl PackageConfiguration{
 
     // TODO(medium): implement group removal
     /// Removes a group
-    // pub fn remove_group(&mut self, group_id: &GroupId) -> declareman::Result<bool> {
+    // pub fn remove_group(&mut self, group_id: &GroupId) -> Result<bool> {
     // }
 
     /// Creates a new package configuration file at the specified path
-    pub fn create_file(&mut self, file_path: &Path) -> declareman::Result<()>{
+    pub fn create_file(&mut self, file_path: &Path) -> impaccable::Result<()>{
         if !self.files.contains_key(file_path) {
             self.files.insert(file_path.to_owned(), PackageFile::new());
             Ok(())
@@ -160,7 +159,7 @@ impl PackageConfiguration{
     }
 
     // /// Allows for flattened iteration over all packages.
-    // /// If you need information about groups or files, access via the field.
+    // /// TODO(low, superfluous): delete if not needed
     // pub fn iter_packages(&self) -> impl Iterator<Item = &PackageId>{
     //     self.files
     //         .iter()
@@ -169,7 +168,7 @@ impl PackageConfiguration{
     // }
 
     /// Adds packages to the specified group
-    pub fn add_packages<I>(&mut self, packages: I, group_id: &GroupId) -> declareman::Result<()>
+    pub fn add_packages<I>(&mut self, packages: I, group_id: &GroupId) -> impaccable::Result<()>
     where
         I: IntoIterator<Item = String>
     {
@@ -195,7 +194,7 @@ impl PackageConfiguration{
 
     // TODO(medium, ergonomics): decide whether to change API to accept multiple packages
     /// Removes a package from a group.
-    pub fn remove_package(&mut self, package_id: &PackageId, group_id: &GroupId) -> declareman::Result<()> {
+    pub fn remove_package(&mut self, package_id: &PackageId, group_id: &GroupId) -> impaccable::Result<()> {
         let mut file_to_save : Option<PathBuf> = Option::None;
         let mut group_found = false;
 
@@ -222,7 +221,7 @@ impl PackageConfiguration{
     }
 
     // Write a file with its currently configured groups to disk
-    fn write_file_to_disk(&self, file_path: &Path) -> declareman::Result<()> {
+    fn write_file_to_disk(&self, file_path: &Path) -> impaccable::Result<()> {
         let Some(group_file) = self.files.get(file_path) else {
             return Err(Error::PackageFileNotFound { package_file: file_path.to_owned() });
         };
