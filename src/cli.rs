@@ -20,7 +20,11 @@ pub enum CliCommand {
     /// Dump the configuration file
     Config,
     /// Sync your target with the package configuration
-    Sync,
+    Sync {
+        /// Remove packages not tracked by your configuration
+        #[arg(long)]
+        remove_untracked: bool,
+    },
     /// Add packages to specified group
     Add {
         #[arg(required=true, num_args=1..)]
@@ -29,25 +33,37 @@ pub enum CliCommand {
         #[arg(short, long, required=true)]
         group: String,
     },
-    /// Remove a package from groups your target is using
+    /// Remove a package from specified group is using
     Remove {
         #[arg(required=true)]
         package: String,
+
+        #[arg(short, long, required=true)]
+        group: String,
+
+        // TODO(low, UX): add active flag to just remove packages from active configuration if possible. make default?
     },
     #[command(subcommand)]
     Target(Target),
 
-    // Try, // should this be add --trial instead?
-
-    /// Compare your target with the active package configuration
-    Diff {
-        /// Also output untracked packages
-        #[arg(short, long)]
-        untracked: bool
+      /// Check what changes a Sync would apply
+    Plan {
+        /// Evaluate what changes sync with this flag would apply
+        #[arg(long)]
+        remove_untracked: bool
     },
+
+    /// Get a package template for your Arch-based distro
+    Template,
+
+    /// Import packages existing on your system into your config
+    Import,
 
     // Review / import 
     //    // untracked / trials
+
+    #[command(subcommand)]
+    Groups(Groups)
 }
 
 /// Interact with target configuration
@@ -61,5 +77,14 @@ pub enum Target {
     Set {
         #[arg(required=true)]
         target: String,
+
+        #[arg(long)]
+        force: bool,
     },
+}
+
+/// Manage Groups
+#[derive(Subcommand)]
+pub enum Groups {
+    Ls,
 }

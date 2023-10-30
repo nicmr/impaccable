@@ -9,9 +9,14 @@ authors = ["Nicolas Mohr"]
 [dependencies]
 anyhow = "1.0.69"
 clap = {version = "4.1.6", features = ["derive"]}
-dialoguer = "0.10.3"
+colored = "2.0.4"
+dialoguer = {version = "0.10.3", features = ["fuzzy-select"] }
 directories = "4.0.1"
 log = "0.4.17"
+os-release = "0.1.0"
+pomsky-macro = "0.10.0"
+regex = "1.10.2"
+reqwest = {version = "0.11.21", default-features = false, features = ["default-tls", "blocking"]}
 serde = {version = "1.0.152", features = ["derive"]}
 thiserror = "1.0.38"
 toml = "0.7.2"

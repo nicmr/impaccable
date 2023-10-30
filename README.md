@@ -14,6 +14,11 @@ A mildly declarative pacman wrapper for Arch Linux.
 ### Install from source
 
 ```bash
+# directly from git
+cargo install --git https://github.com/nicmr/declareman
+```
+
+```bash
 # clone the repo
 git clone https://github.com/nicmr/declareman && cd declareman
 # install with cargo
