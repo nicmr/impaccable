@@ -1,0 +1,10 @@
+[nicmr-base]
+members = [
+    "bat",
+    "bitwarden",
+    "github-cli",
+    "helix",
+    "htop",
+    "rustup",
+    "terraform",
+]

@@ -1,9 +1,9 @@
 mod cli;
-mod declareman;
+mod impaccable;
 
 
 use clap::Parser;
-use declareman::{config::{DeclaremanConfigManager, ActiveTarget}, pacman, PackageId};
+use impaccable::{config::{ConfigManager, ActiveTarget}, pacman, PackageId};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
@@ -11,14 +11,14 @@ use std::io::Write;
 use anyhow::{Context, bail};
 use cli::{Cli, CliCommand, Target, Groups};
 
-use crate::declareman::{pacman::packages_required_by, PackageGroup};
+use crate::impaccable::{pacman::packages_required_by, PackageGroup};
 
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
 
     // TODO: replace expect
     // TODO: check if 'directories' crate is even needed, as this only runs on Linux anyway, and its main benefit is being cross-platform
-    let default_project_dirs = ProjectDirs::from("dev.nicolasmohr.declareman", "Declareman Devs", "declareman")
+    let default_project_dirs = ProjectDirs::from("dev.nicolasmohr.impaccable", "impaccable devs", "impaccable")
     .expect("Failed to compute ProjectDirs");
 
     
@@ -26,7 +26,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
     let active_target_path = {
         if let Some(cli_target_override) = cli.target {
             cli_target_override
-        } else if let Ok(env_target_override) = env::var("DECLAREMAN_TARGET") {
+        } else if let Ok(env_target_override) = env::var("IMPACCABLE_TARGET") {
             PathBuf::from(env_target_override)
         } else {
             let mut default_target_path = default_project_dirs.config_dir().to_path_buf();
@@ -35,12 +35,12 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
     };
 
-    let config_manager : declareman::config::DeclaremanConfigManager = {
+    let config_manager : impaccable::config::ConfigManager = {
         let config_path = {
             if let Some(cli_config_override) = cli.config {
                 cli_config_override
             }
-            else if let Ok(env_config_override) = env::var("DECLAREMAN_CONFIG") {
+            else if let Ok(env_config_override) = env::var("IMPACCABLE_CONFIG") {
                 PathBuf::from(env_config_override)
             } else {
                 let mut default_config_path = default_project_dirs.config_dir().to_path_buf();
@@ -53,12 +53,12 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             Ok(s) => s,
             Err(err) => match err.kind() {
                 io::ErrorKind::NotFound => {
-                    println!("Failed to find declareman config file at {}", config_path.to_str().unwrap_or("<invalid unicode>"));
+                    println!("Failed to find config file at {}", config_path.to_str().unwrap_or("<invalid unicode>"));
                     if Confirm::new().with_prompt("Create a new config file?").interact()? {
                         println!("Let's create a new file");
 
                         // write default values, then open editor
-                        let config_template = declareman::config::DeclaremanConfig::template();
+                        let config_template = impaccable::config::Config::template();
                         let serialized_template = toml::to_string_pretty(&config_template)?;
 
                         
@@ -82,8 +82,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         };
 
-        let config = toml::from_str(&config_string).context("Failed to parse declareman configuration")?;
-        DeclaremanConfigManager::new(config_path, config)
+        let config = toml::from_str(&config_string).context("Failed to parse configuration")?;
+        ConfigManager::new(config_path, config)
     };
 
     let mut package_config = config_manager.package_configuration().context("Failed to parse package configuration")?;
@@ -128,7 +128,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Some(CliCommand::Sync { remove_untracked }) => {
 
-            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             // let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
 
             let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
@@ -140,7 +140,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             
             if *remove_untracked {
                 let untracked_packages = pacman_installed.iter().cloned().filter(|package| should_be_installed.contains(package));
-                let _uninstall_exit_status = declareman::pacman::uninstall_packages(untracked_packages)?;
+                let _uninstall_exit_status = impaccable::pacman::uninstall_packages(untracked_packages)?;
             }
             // install_group_packages(&package_config.groups, &config_manager.config().root_group)?;
         }
@@ -184,14 +184,20 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         }
         Some(CliCommand::Plan { remove_untracked }) => {
-            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
 
             let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
+
+            println!("Active target: {}", active_target.target());
+            println!("Configured groups: {}", toml::to_string(target)?);
+
             let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
 
+            // TODO(high): refactor this into PackageConfig
             let not_installed_by_group : Vec<(&PackageId, PackageGroup)> =
                 package_config
                     .iter_groups()
+                    .filter(|(group_name, _)| target.root_groups.contains(*group_name))
                     .map(|(name, package_contents)|{
                         let not_installed : BTreeSet<PackageId> = package_contents.members.clone()
                             .into_iter()
@@ -228,10 +234,10 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
 
         Some(CliCommand::Template) => {
-            let system_configuration = declareman::distro::get_system_configuration().context("Failed to get system configuration")?;
+            let system_configuration = impaccable::distro::get_system_configuration().context("Failed to get system configuration")?;
             // TODO: switch to a display implementation
             println!("System configuration: {:?}", &system_configuration);
-            let new_groups = declareman::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
+            let new_groups = impaccable::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
             
             // TODO: handle absolute path
             let mut file_path = config_manager.absolute_package_dir()?;
@@ -244,7 +250,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
 
         Some(CliCommand::Import) => {
-            let pacman_installed = declareman::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             
             let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
             let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();

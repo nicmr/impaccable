@@ -1,4 +1,6 @@
-Additional features:  
+Additional features:
+- package subgroups / "meta" group type
+- "ignore" group type
 - add ability to override pacman flags both as cli flags and in config file
   ```toml
   [pacman]
