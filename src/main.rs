@@ -3,7 +3,7 @@ mod impaccable;
 
 
 use clap::Parser;
-use impaccable::{config::{ConfigManager, ActiveTarget}, pacman, PackageId};
+use impaccable::{config::{ConfigManager, ActiveTarget, self}, pacman, PackageId};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
@@ -35,7 +35,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
     };
 
-    let config_manager : impaccable::config::ConfigManager = {
+    let mut config_manager : impaccable::config::ConfigManager = {
         let config_path = {
             if let Some(cli_config_override) = cli.config {
                 cli_config_override
@@ -245,7 +245,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Some(CliCommand::Import) => {
             let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             
-            let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
+            let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find active target '{}' in config", active_target.target()))?;
+
+            // TODO(medium): also check that groups actually exist, error accordingly
             let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
 
             let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
@@ -266,9 +268,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
             let groups: Vec<&String> = package_config.iter_groups().map(|(name, _)| name).collect();
 
-            let dialog_theme = ColorfulTheme::default();
+            let dialogue_theme = ColorfulTheme::default();
 
-            let Some(group_selection) = FuzzySelect::with_theme(&dialog_theme)
+            let Some(group_selection) = FuzzySelect::with_theme(&dialogue_theme)
                 .with_prompt("Select the group to add the packages to")
                 .item("New group")
                 .items(&groups)
@@ -278,24 +280,22 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 };
 
             let group_id = 'group_sel: {
-                // Check if new group creation requested or can early return selected group
+
+                // Check if new group creation requested or can just use selected group
                 if group_selection != 0 {
                     // requires decrement by 1 because "new group" item was prepended
-                    println!("{}", groups[group_selection-1]);
                     break 'group_sel groups[group_selection-1].to_string();
                 }
 
-                let new_group_name: String = Input::with_theme(&dialog_theme)
+                let new_group_name: String = Input::with_theme(&dialogue_theme)
                     .with_prompt("Name for new group")
                     // TODO(low, limitation): only ascii characters allowed by interact_text
                     .interact_text().context("Failed to get new group name")?;
-                
-                    println!("{}", new_group_name);
 
-                let file_paths : Vec<_> = package_config.files.iter().map(|(name, _)| name).collect();
+                let file_paths : Vec<_> = package_config.files.keys().collect();
                 let file_strs : Vec<_> = file_paths.iter().map(|path| path.to_string_lossy()).collect();
 
-                let Some(file_selection) = FuzzySelect::with_theme(&dialog_theme)
+                let Some(file_selection) = FuzzySelect::with_theme(&dialogue_theme)
                     .with_prompt("Select the file to store the group in")
                     .item("New file")
                     .items(&file_strs)
@@ -303,30 +303,32 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                     .context("File selection crashed")? else {
                         bail!("File selection aborted")
                     };
+                
+                let file_path = {
 
-                // Check if new file creation was selected or can early return selected file
-                if file_selection != 0 {
-                    // requires decrement by 1 because "new file" item was prepended
-                    package_config.create_group(new_group_name.clone(), &file_paths[file_selection-1].clone())?;
-                    break 'group_sel new_group_name;
-                }
+                    // Check if new file creation was selected or can just use selected file
+                    if file_selection != 0 {
+                        // requires decrement by 1 because "new file" item was prepended
+                        file_paths[file_selection-1].clone()
+                    } else {
+                        let new_file_name_rel : String = Input::with_theme(&dialogue_theme)
+                            .with_prompt(format!("New file name (stored inside package directory at '{}')", config_manager.absolute_package_dir()?.to_string_lossy()))
+                            .interact_text()
+                            .context("Failed to get new file name")?;
 
-                let new_file_name_rel : String = Input::with_theme(&dialog_theme)
-                    .with_prompt(format!("New file name (stored inside package directory at '{}')", config_manager.absolute_package_dir()?.to_string_lossy()))
-                    .interact_text()
-                    .context("Failed to get new file name")?;
 
-                println!("{}", new_file_name_rel);
-
-                let new_file_path = {
-                    let mut p = config_manager.absolute_package_dir()?; 
-                    p.push(new_file_name_rel);
-                    p.set_extension("toml");
-                    p
+                        let new_file_path = {
+                            let mut p = config_manager.absolute_package_dir()?; 
+                            p.push(new_file_name_rel);
+                            p.set_extension("toml");
+                            p
+                        };
+                        package_config.create_file(&new_file_path, None)?;
+                        new_file_path
+                    }
                 };
 
-                package_config.create_file(&new_file_path, None)?;
-                package_config.create_group(new_group_name.clone(), &new_file_path)?;
+                package_config.create_group(new_group_name.clone(), &file_path)?;
 
                 new_group_name
             };
@@ -337,8 +339,17 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                     .map(|index| untracked_packages[*index].clone())
                     .collect();
             package_config.add_packages(selected_packages, &group_id).context("Failed to add packages")?;
+
+            if !target.root_groups.contains(&group_id) {
+                let confirmation = Confirm::with_theme(&dialogue_theme)
+                    .with_prompt("The selected group is currently inactive. Add to active target's root groups?")
+                    .interact()
+                    .context("Confirmation aborted")?;
+                if confirmation {
+                    config_manager.add_root_group(active_target.target(), group_id)?;
+                }
+            }
         }
     }
     Ok(())
 }
-

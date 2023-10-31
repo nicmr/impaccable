@@ -56,7 +56,7 @@ pub enum CliCommand {
     /// Get a package template for your Arch-based distro
     Template,
 
-    /// Import packages existing on your system into your config
+    /// Import packages existing on your system into your config (interactive)
     Import,
 
     // Review / import 

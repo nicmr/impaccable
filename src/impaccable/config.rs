@@ -1,6 +1,6 @@
 use std::{path::{PathBuf, Path}, collections::{HashMap, BTreeSet, BTreeMap, btree_map::Entry}};
 
-use anyhow::{Context, anyhow};
+use anyhow::{Context, anyhow, bail};
 use serde::{Serialize, Deserialize};
 use walkdir::WalkDir;
 use std::io::Write;
@@ -10,7 +10,8 @@ use super::{GroupId, Error, PackageId, PackageGroup};
 
 use std::iter::Extend;
 
-// TODO(high, docs): ensure, then document that config_path is an absolute path
+// TODO(high, docs): ensure, then document that config_path is always an absolute path
+/// Manages the configuration, persisting it to the config file when required.
 pub struct ConfigManager {
     config_path: PathBuf,
     config: Config,
@@ -26,6 +27,18 @@ impl ConfigManager {
 
     pub fn config(&self) -> &Config { &self.config }
 
+    /// Returns false if the specified target arleady contained the group.
+    pub fn add_root_group(&mut self, target_id: &TargetId, group: GroupId) -> anyhow::Result<bool> {
+        if let Some(target_config) = self.config.targets.get_mut(target_id) {
+            let added = target_config.root_groups.insert(group);
+            self.write_config_to_disk()?;
+            Ok(added)
+        } else {
+            // TODO(high): rename to target not found (?) or separate into two variants
+            bail!(Error::ActiveTargetNotFound(target_id.clone()))
+        }
+    }
+
     pub fn absolute_package_dir(&self) -> anyhow::Result<PathBuf> {
         self.config_path
             .parent()
@@ -40,6 +53,14 @@ impl ConfigManager {
         // println!("{:?}", absolute_package_dir); // make debug log
 
         PackageConfiguration::parse(&absolute_package_dir).context("failed to parse package configuration")
+    }
+
+    fn write_config_to_disk(&self) -> anyhow::Result<()> {
+        let serialized_config = toml::to_string_pretty(&self.config)?;
+        let mut file = std::fs::File::create(&self.config_path)?;
+        write!(file, "{}", serialized_config)?;
+        Ok(())
+
     }
 }
 
@@ -164,7 +185,7 @@ impl PackageConfiguration{
             };
 
             self.files.insert(file_path_abs.to_owned(), package_file);
-            self.write_file_to_disk(&file_path_abs);
+            self.write_file_to_disk(file_path_abs)?;
             Ok(())
         } else {
             Err(Error::PackageFileAlreadyExists { package_file: file_path_abs.to_owned() })

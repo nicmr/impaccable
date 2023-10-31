@@ -10,8 +10,10 @@ pub enum Error {
     // not found errors
     #[error("Active target `{0}` not found")]
     ActiveTargetNotFound(TargetId),
-    #[error("Root package `{0}` not found")]
+
+    #[error("Root group `{0}` not found")]
     RootGroupNotFound(GroupId),
+
     #[error("Package file `{package_file}` not found")]
     PackageFileNotFound {
         package_file: PathBuf,
@@ -40,7 +42,7 @@ pub enum Error {
 
     // conversion errors
 
-    // TODO: create error implementation per use case instead
+    // TODO: create error implementation per use case instead?
     // https://kazlauskas.me/entries/errors
     #[error(transparent)]
     Io {
