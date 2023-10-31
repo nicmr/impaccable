@@ -1,10 +1,8 @@
-use std::{collections::BTreeMap, fmt::format};
+use std::collections::BTreeMap;
 
 use anyhow::bail;
 
-use crate::impaccable::PackageGroup;
-
-use super::GroupId;
+use crate::impaccable::{GroupId, PackageGroup};
 
 const ENDEAVOUR_OS : &str = "EndeavourOS";
 

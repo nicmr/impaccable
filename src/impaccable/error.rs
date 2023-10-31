@@ -2,17 +2,16 @@ use std::{io, path::PathBuf};
 
 use thiserror::Error;
 
-use super::{PackageId, GroupId};
-
-pub const INVALID_UNICODE_DISPLAY: &str = "<invalid unicode>";
-
+use super::{PackageId, GroupId, config::TargetId};
 
 // TODO(low): split error into separate errors for package, group, file(?)
 #[derive(Error, Debug)]
 pub enum Error {
     // not found errors
+    #[error("Active target `{0}` not found")]
+    ActiveTargetNotFound(TargetId),
     #[error("Root package `{0}` not found")]
-    RootPackageNotFound(String),
+    RootGroupNotFound(GroupId),
     #[error("Package file `{package_file}` not found")]
     PackageFileNotFound {
         package_file: PathBuf,

@@ -8,10 +8,10 @@ use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, Multi
 use directories::ProjectDirs;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
 use std::io::Write;
-use anyhow::{Context, bail};
+use anyhow::{Context, bail, anyhow};
 use cli::{Cli, CliCommand, Target, Groups};
 
-use crate::impaccable::{pacman::packages_required_by, PackageGroup};
+use crate::impaccable::{pacman::packages_required_by, PackageGroup, GroupId};
 
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
@@ -127,22 +127,18 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             println!("config: {:?}", config_manager.config());
         }
         Some(CliCommand::Sync { remove_untracked }) => {
-
             let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
-            // let not_installed_by_group = package_config.not_installed_packages_by_group(&pacman_installed);
 
-            let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
-            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
+            let target_config = config_manager.config().targets.get(active_target.target()).ok_or_else(|| anyhow!(impaccable::Error::ActiveTargetNotFound(active_target.target().clone())))?;
+            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target_config.root_groups).collect();
 
-            // TODO(low, optimization): Might be benign, but check if this canbe done with one less level of referencing
             let not_installed = should_be_installed.iter().filter(|package| !pacman_installed.contains(**package));
             pacman::install_packages(not_installed).context("Failed to install missing packages")?;
             
             if *remove_untracked {
                 let untracked_packages = pacman_installed.iter().cloned().filter(|package| should_be_installed.contains(package));
-                let _uninstall_exit_status = impaccable::pacman::uninstall_packages(untracked_packages)?;
+                let _uninstall_exit_status = pacman::uninstall_packages(untracked_packages)?;
             }
-            // install_group_packages(&package_config.groups, &config_manager.config().root_group)?;
         }
         Some(CliCommand::Add { packages, group }) => {
             let unique_packages : BTreeSet<PackageId> = packages.clone().into_iter().collect();
@@ -191,13 +187,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             println!("Active target: {}", active_target.target());
             println!("Configured groups: {}", toml::to_string(target)?);
 
-            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
 
-            // TODO(high): refactor this into PackageConfig
-            let not_installed_by_group : Vec<(&PackageId, PackageGroup)> =
-                package_config
-                    .iter_groups()
-                    .filter(|(group_name, _)| target.root_groups.contains(*group_name))
+            let missing_on_system : Vec<(&GroupId, PackageGroup)> =
+                package_config.groups(&target.root_groups)
                     .map(|(name, package_contents)|{
                         let not_installed : BTreeSet<PackageId> = package_contents.members.clone()
                             .into_iter()
@@ -210,7 +202,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
             println!("Sync would install the following programs");
 
-            for (group, missing_packages) in not_installed_by_group {
+            for (group, missing_packages) in missing_on_system {
                 // only display groups that have missing packages
                 if !missing_packages.members.is_empty() {
                     println!("{}", format!("From group '{}':", group).green());
@@ -223,6 +215,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             if *remove_untracked {
                 println!("sync --remove-untracked would remove the following programs");
 
+                let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
                 let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
 
                 for (untracked_package, required_by) in packages_required_by(untracked_packages)? {
@@ -239,7 +232,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             println!("System configuration: {:?}", &system_configuration);
             let new_groups = impaccable::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
             
-            // TODO: handle absolute path
+            // TODO(?): handle absolute path
             let mut file_path = config_manager.absolute_package_dir()?;
             file_path.push(system_configuration.distro);
             file_path.set_extension("toml");
@@ -255,64 +248,87 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
             let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
 
-            // TODO(low, optimization): prevent excessive Vec and String allocations
             let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
 
-            let selected_package_indices = match MultiSelect::with_theme(&ColorfulTheme::default())
+            let Some(selected_package_indices) = MultiSelect::with_theme(&ColorfulTheme::default())
                 // BUG(low, ux, upstream?): prompt only shows on second page if paginated
                 // check if bug is fixable or provide dialog beforehand explaining what to do
                 .with_prompt("Select the packages you would like to import into your configuration")
                 .items(&untracked_packages)
-                .interact_opt() {
-                    Ok(Some(sel)) => sel,
-                    Ok(None) => {
-                        bail!("Package selection aborted")
-                    },
-                    Err(_err) => {
-                        bail!("Package selection crashed")
-                    },
-                };
+                .interact_opt()
+                .context("Package selection aborted")? else {
+                    bail!("Package selection aborted")
+            };
+
             if selected_package_indices.is_empty() {
                 return Ok(());
             }
 
             let groups: Vec<&String> = package_config.iter_groups().map(|(name, _)| name).collect();
 
-            let group_selection = match FuzzySelect::with_theme(&ColorfulTheme::default())
+            let dialog_theme = ColorfulTheme::default();
+
+            let Some(group_selection) = FuzzySelect::with_theme(&dialog_theme)
                 .with_prompt("Select the group to add the packages to")
                 .item("New group")
                 .items(&groups)
-                .interact_opt() {
-                    Ok(Some(sel)) => sel,
-                    Ok(None) => {
-                        bail!("Group selection aborted")
-                    },
-                    Err(_err) => {
-                        bail!("Group selection crashed")
-                    },
+                .interact_opt()
+                .context("File selection crashed")? else {
+                    bail!("File selection aborted")
                 };
 
-            let group_id = {
-                // Check if new group was selected and create new group
-                if group_selection == 0 {
-                let new_group_name: String = Input::with_theme(&ColorfulTheme::default())
+            let group_id = 'group_sel: {
+                // Check if new group creation requested or can early return selected group
+                if group_selection != 0 {
+                    // requires decrement by 1 because "new group" item was prepended
+                    println!("{}", groups[group_selection-1]);
+                    break 'group_sel groups[group_selection-1].to_string();
+                }
+
+                let new_group_name: String = Input::with_theme(&dialog_theme)
                     .with_prompt("Name for new group")
                     // TODO(low, limitation): only ascii characters allowed by interact_text
                     .interact_text().context("Failed to get new group name")?;
                 
                     println!("{}", new_group_name);
 
+                let file_paths : Vec<_> = package_config.files.iter().map(|(name, _)| name).collect();
+                let file_strs : Vec<_> = file_paths.iter().map(|path| path.to_string_lossy()).collect();
 
-                    // TODO:<
-                    // ask for file the new group should be stored in ``
-                    // create new group
+                let Some(file_selection) = FuzzySelect::with_theme(&dialog_theme)
+                    .with_prompt("Select the file to store the group in")
+                    .item("New file")
+                    .items(&file_strs)
+                    .interact_opt()
+                    .context("File selection crashed")? else {
+                        bail!("File selection aborted")
+                    };
 
-                    new_group_name
-                } else {
-                    // requires decrement by 1 because new group item was prepended
-                    println!("{}", groups[group_selection-1]);
-                    groups[group_selection-1].to_string()
+                // Check if new file creation was selected or can early return selected file
+                if file_selection != 0 {
+                    // requires decrement by 1 because "new file" item was prepended
+                    package_config.create_group(new_group_name.clone(), &file_paths[file_selection-1].clone())?;
+                    break 'group_sel new_group_name;
                 }
+
+                let new_file_name_rel : String = Input::with_theme(&dialog_theme)
+                    .with_prompt(format!("New file name (stored inside package directory at '{}')", config_manager.absolute_package_dir()?.to_string_lossy()))
+                    .interact_text()
+                    .context("Failed to get new file name")?;
+
+                println!("{}", new_file_name_rel);
+
+                let new_file_path = {
+                    let mut p = config_manager.absolute_package_dir()?; 
+                    p.push(new_file_name_rel);
+                    p.set_extension("toml");
+                    p
+                };
+
+                package_config.create_file(&new_file_path, None)?;
+                package_config.create_group(new_group_name.clone(), &new_file_path)?;
+
+                new_group_name
             };
 
             let selected_packages: BTreeSet<String> = 
