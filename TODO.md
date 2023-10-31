@@ -7,7 +7,8 @@ Additional features:
   ```toml
   [pacman]
   install_flags = ""
-  remove_flags = ""  ```
+  remove_flags = "" 
+  ```
 - low priority: add groups info, creation, deletion cli commands
 
 Bugs
