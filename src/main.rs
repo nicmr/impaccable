@@ -3,7 +3,7 @@ mod impaccable;
 
 
 use clap::Parser;
-use impaccable::{config::{ConfigManager, ActiveTarget, self}, pacman, PackageId};
+use impaccable::{config::{ConfigManager, ActiveTarget}, pacman, PackageId};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
