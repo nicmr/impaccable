@@ -1,16 +1,17 @@
 use std::{path::{PathBuf, Path}, collections::{HashMap, BTreeSet, BTreeMap, btree_map::Entry}};
 
-use anyhow::Context;
+use anyhow::{Context, anyhow, bail};
 use serde::{Serialize, Deserialize};
 use walkdir::WalkDir;
 use std::io::Write;
-
 use crate::impaccable;
 
 use super::{GroupId, Error, PackageId, PackageGroup};
 
 use std::iter::Extend;
 
+// TODO(high, docs): ensure, then document that config_path is always an absolute path
+/// Manages the configuration, persisting it to the config file when required.
 pub struct ConfigManager {
     config_path: PathBuf,
     config: Config,
@@ -26,12 +27,23 @@ impl ConfigManager {
 
     pub fn config(&self) -> &Config { &self.config }
 
-    // TODO: remove unwrap
-    // TODO: think about - wouldn't it make things considerably easier if package dir config option
-    //       was absolute without relative support for now
+    /// Returns false if the specified target arleady contained the group.
+    pub fn add_root_group(&mut self, target_id: &TargetId, group: GroupId) -> anyhow::Result<bool> {
+        if let Some(target_config) = self.config.targets.get_mut(target_id) {
+            let added = target_config.root_groups.insert(group);
+            self.write_config_to_disk()?;
+            Ok(added)
+        } else {
+            // TODO(high): rename to target not found (?) or separate into two variants
+            bail!(Error::ActiveTargetNotFound(target_id.clone()))
+        }
+    }
+
     pub fn absolute_package_dir(&self) -> anyhow::Result<PathBuf> {
-        Ok(self.config_path.parent().unwrap()
-                .join(&self.config.package_dir))
+        self.config_path
+            .parent()
+            .ok_or(anyhow!("Failed to get directory containing config"))
+            .map(|dir| dir.join(&self.config.package_dir))
     }
 
     pub fn package_configuration(&self) -> anyhow::Result<PackageConfiguration> {
@@ -41,6 +53,14 @@ impl ConfigManager {
         // println!("{:?}", absolute_package_dir); // make debug log
 
         PackageConfiguration::parse(&absolute_package_dir).context("failed to parse package configuration")
+    }
+
+    fn write_config_to_disk(&self) -> anyhow::Result<()> {
+        let serialized_config = toml::to_string_pretty(&self.config)?;
+        let mut file = std::fs::File::create(&self.config_path)?;
+        write!(file, "{}", serialized_config)?;
+        Ok(())
+
     }
 }
 
@@ -73,6 +93,8 @@ pub struct TargetConfig {
     pub root_groups: BTreeSet<GroupId>
 }
 
+/// Represents the parsed form of the entire package configuration of a system.
+/// Files are indexed by their absolute paths.
 #[derive(Debug, Default, Clone)]
 pub struct PackageConfiguration {
     pub files : HashMap<PathBuf, PackageFile>
@@ -88,6 +110,9 @@ impl PackageFile {
         Self {
             groups: BTreeMap::new()
         }
+    }
+    pub fn from_groups(groups: BTreeMap<GroupId, PackageGroup>) -> Self {
+        Self { groups }
     }
 }
 
@@ -114,7 +139,7 @@ impl PackageConfiguration{
 
     /// Creates a new group in the package file at the specified `file_path`.
     /// Returns Err if the file does not exist or the group alreaddy exists in said file
-    pub fn create_group(&mut self, group_id: &GroupId, file_path: &Path) -> impaccable::Result<()> {
+    pub fn create_group(&mut self, group_id: GroupId, file_path: &Path) -> impaccable::Result<()> {
         let Some(package_file) = self.files.get_mut(file_path) else {
             return Err(Error::PackageFileNotFound{ package_file: file_path.to_owned()})
         };
@@ -124,17 +149,22 @@ impl PackageConfiguration{
             Ok(())
         }
         else {
-            Err(Error::GroupAlreadyExists { group:group_id.to_owned() })
+            Err(Error::GroupAlreadyExists { group: group_id })
         }
     }
 
     /// Returns an iterator over the packages contained by the specified groups.
     pub fn packages_of_groups<'a>(&'a self, groups: &'a BTreeSet<GroupId>) -> impl Iterator<Item = &PackageId> + 'a  {
+        self.groups(groups)
+            .flat_map(|(_, package_group)| &package_group.members)
+    }
+
+    /// Creates an iterator over package groups pre-filtered to only contain the specified groups.
+    pub fn groups<'a>(&'a self, groups: &'a BTreeSet<GroupId>) -> impl Iterator<Item = (&String, &PackageGroup)> {
         self.files
             .iter()
             .flat_map(|(_file_name, contents)| &contents.groups)
             .filter(|(group_name, _)| groups.contains(*group_name))
-            .flat_map(|(_, package_group)| &package_group.members)
     }
 
     // TODO(medium): implement group removal
@@ -142,13 +172,23 @@ impl PackageConfiguration{
     // pub fn remove_group(&mut self, group_id: &GroupId) -> Result<bool> {
     // }
 
-    /// Creates a new package configuration file at the specified path
-    pub fn create_file(&mut self, file_path: &Path) -> impaccable::Result<()>{
-        if !self.files.contains_key(file_path) {
-            self.files.insert(file_path.to_owned(), PackageFile::new());
+    /// Creates a new package configuration file at the specified path.
+    /// If no contents are passed, the file will be created empty.
+    // TODO: check that supplied path is inside package directory (or use special wrapper type (`PathInsidePackageDir`) that makes that guarantee?)
+    pub fn create_file(&mut self, file_path_abs: &Path, opt_contents: Option<BTreeMap<GroupId, PackageGroup>> ) -> impaccable::Result<()>{
+        
+        if !self.files.contains_key(file_path_abs) {
+
+            let package_file = match opt_contents {
+                Some(groups) => PackageFile::from_groups(groups),
+                None => PackageFile::new(),
+            };
+
+            self.files.insert(file_path_abs.to_owned(), package_file);
+            self.write_file_to_disk(file_path_abs)?;
             Ok(())
         } else {
-            Err(Error::PackageFileAlreadyExists { package_file: file_path.to_owned() })
+            Err(Error::PackageFileAlreadyExists { package_file: file_path_abs.to_owned() })
         }
     }
 
@@ -220,7 +260,8 @@ impl PackageConfiguration{
         Ok(())
     }
 
-    // Write a file with its currently configured groups to disk
+    // Write a file with its currently configured groups to disk.
+    // Will create the file if it exists or truncate otherwise.
     fn write_file_to_disk(&self, file_path: &Path) -> impaccable::Result<()> {
         let Some(group_file) = self.files.get(file_path) else {
             return Err(Error::PackageFileNotFound { package_file: file_path.to_owned() });
