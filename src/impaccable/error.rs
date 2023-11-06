@@ -4,6 +4,13 @@ use thiserror::Error;
 
 use super::{PackageId, GroupId, config::TargetId};
 
+// /// Errors encountered when parsing the configuration
+// // TODO: consider moving to config submodule
+// pub enum ConfigError {
+    
+//     ConfigFileNotFound
+// }
+
 #[derive(Error, Debug)]
 pub enum Error {
     // not found errors
@@ -38,9 +45,13 @@ pub enum Error {
         group: GroupId,
     },
 
+    #[error("Failed to open config file at `{path}`")]
+    ConfigFileNotFound {
+        path: PathBuf,
+        source: io::Error,
+    },
 
     // conversion errors
-
     #[error(transparent)]
     Io {
         #[from]

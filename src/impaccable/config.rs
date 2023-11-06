@@ -1,6 +1,6 @@
-use std::{path::{PathBuf, Path}, collections::{HashMap, BTreeSet, BTreeMap, btree_map::Entry}};
+use std::{path::{PathBuf, Path}, collections::{HashMap, BTreeSet, BTreeMap, btree_map::Entry}, fs};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{anyhow, bail};
 use serde::{Serialize, Deserialize};
 use walkdir::WalkDir;
 use std::io::Write;
@@ -15,17 +15,36 @@ use std::iter::Extend;
 pub struct ConfigManager {
     config_path: PathBuf,
     config: Config,
+    package_config: PackageConfiguration
 }
 
 impl ConfigManager {
-    pub fn new(config_path: PathBuf, config: Config) -> Self {
-        Self {
-            config_path,
-            config,
-        }
+
+    /// Tries to parse the configuration file at `config path` and the associated package directory
+    pub fn parse(config_path: PathBuf) -> impaccable::Result<Self> {
+        let config_string = fs::read_to_string(&config_path)
+            .map_err(|io_err| {
+                if io_err.kind() == std::io::ErrorKind::NotFound {
+                    Error::ConfigFileNotFound { path: config_path.clone(), source: io_err }
+                } else {
+                    io_err.into()
+                }
+            })?;
+
+        let config : Config = toml::from_str(&config_string)?;
+        // TODO(high): error in case config path is set to top level directory instead of unwrap
+        let package_config_path = config_path.parent().unwrap().join(&config.package_dir);
+        let package_config = PackageConfiguration::parse(&package_config_path)?;
+
+
+        // TODO(high): verify config before returning
+
+        Ok(Self { config_path, config, package_config })
     }
 
     pub fn config(&self) -> &Config { &self.config }
+    pub fn package_config(&self) -> &PackageConfiguration { &self.package_config }
+    pub fn package_config_mut(&mut self) -> &mut PackageConfiguration { &mut self.package_config } 
 
     /// Adds a new root group to the specified target configuration.
     /// Returns `false` if no change was performed, i.e. the group was already present.
@@ -46,10 +65,10 @@ impl ConfigManager {
             .map(|dir| dir.join(&self.config.package_dir))
     }
 
-    pub fn parse_package_configuration(&self) -> anyhow::Result<PackageConfiguration> {
-        let absolute_package_dir = self.absolute_package_dir()?;
-        PackageConfiguration::parse(&absolute_package_dir).context("failed to parse package configuration")
-    }
+    // fn parse_package_configuration(&self) -> anyhow::Result<PackageConfiguration> {
+    //     let absolute_package_dir = self.absolute_package_dir()?;
+    //     PackageConfiguration::parse(&absolute_package_dir).context("failed to parse package configuration")
+    // }
 
     fn write_config_to_disk(&self) -> anyhow::Result<()> {
         let serialized_config = toml::to_string_pretty(&self.config)?;
