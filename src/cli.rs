@@ -40,8 +40,6 @@ pub enum CliCommand {
 
         #[arg(short, long, required=true)]
         group: String,
-
-        // TODO(low, UX): add active flag to just remove packages from active configuration if possible. make default?
     },
     #[command(subcommand)]
     Target(Target),
@@ -58,9 +56,6 @@ pub enum CliCommand {
 
     /// Import packages existing on your system into your config (interactive)
     Import,
-
-    // Review / import 
-    //    // untracked / trials
 
     #[command(subcommand)]
     Groups(Groups)

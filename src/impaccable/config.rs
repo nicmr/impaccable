@@ -6,7 +6,7 @@ use walkdir::WalkDir;
 use std::io::Write;
 use crate::impaccable;
 
-use super::{GroupId, Error, PackageId, PackageGroup};
+use super::{GroupId, Error, PackageId, PackageGroup, PackageGroupMap};
 
 use std::iter::Extend;
 
@@ -27,15 +27,15 @@ impl ConfigManager {
 
     pub fn config(&self) -> &Config { &self.config }
 
-    /// Returns false if the specified target arleady contained the group.
+    /// Adds a new root group to the specified target configuration.
+    /// Returns `false` if no change was performed, i.e. the group was already present.
     pub fn add_root_group(&mut self, target_id: &TargetId, group: GroupId) -> anyhow::Result<bool> {
         if let Some(target_config) = self.config.targets.get_mut(target_id) {
             let added = target_config.root_groups.insert(group);
             self.write_config_to_disk()?;
             Ok(added)
         } else {
-            // TODO(high): rename to target not found (?) or separate into two variants
-            bail!(Error::ActiveTargetNotFound(target_id.clone()))
+            bail!(Error::TargetNotFound(target_id.clone()))
         }
     }
 
@@ -46,12 +46,8 @@ impl ConfigManager {
             .map(|dir| dir.join(&self.config.package_dir))
     }
 
-    pub fn package_configuration(&self) -> anyhow::Result<PackageConfiguration> {
-        // TODO: check if path really is relative first (might already be absolute)
-
+    pub fn parse_package_configuration(&self) -> anyhow::Result<PackageConfiguration> {
         let absolute_package_dir = self.absolute_package_dir()?;
-        // println!("{:?}", absolute_package_dir); // make debug log
-
         PackageConfiguration::parse(&absolute_package_dir).context("failed to parse package configuration")
     }
 
@@ -72,19 +68,24 @@ pub struct Config {
 }
 
 impl Config {
-    /// Creates an instance of `Self` with placeholder values to template the config file
+    /// Creates an instance of `Self` with placeholder values to template the config file.
     /// 
-    pub fn template() -> Self {
+    /// Reads some system-specific data for user-friendly initial values:
+    /// * `/etc/hostname` as default target name
+    /// 
+    /// Will return `Err` if retrieval of system-specific data fails
+    pub fn template() -> anyhow::Result<Self> {
         let mut targets = BTreeMap::new();
-        // TODO: use /etc/hostname or gethostname to insert the hostname of the machine as the default value
+
+        let hostname = std::fs::read_to_string("/etc/hostname")?;
         targets.insert(
-            String::from("my_arch_machine"),
+            hostname,
             TargetConfig { root_groups: [String::from("awesome_software")].into() }
         );
-        Self {
-            package_dir : "./packages".into(),
-            targets,
-        }
+        Ok(Self {
+                    package_dir : "./packages".into(),
+                    targets,
+                })
     }
 }
 
@@ -102,7 +103,7 @@ pub struct PackageConfiguration {
 
 #[derive(Debug, Default, Clone)]
 pub struct PackageFile {
-    pub groups: BTreeMap<GroupId, PackageGroup>
+    pub groups: PackageGroupMap
 }
 
 impl PackageFile {
@@ -111,7 +112,7 @@ impl PackageFile {
             groups: BTreeMap::new()
         }
     }
-    pub fn from_groups(groups: BTreeMap<GroupId, PackageGroup>) -> Self {
+    pub fn from_groups(groups: PackageGroupMap) -> Self {
         Self { groups }
     }
 }
@@ -128,7 +129,7 @@ impl PackageConfiguration{
             
             let path = entry.path();
             let file_string = std::fs::read_to_string(path)?;
-            let groups: BTreeMap<String, PackageGroup> = toml::from_str(&file_string)?;
+            let groups: PackageGroupMap = toml::from_str(&file_string)?;
 
             if let Some(_duplicate_file) = package_configuration.files.insert(path.to_owned(), PackageFile { groups }) {
                 return Err(Error::PackageFileAlreadyExists { package_file: path.to_path_buf() })
@@ -167,15 +168,10 @@ impl PackageConfiguration{
             .filter(|(group_name, _)| groups.contains(*group_name))
     }
 
-    // TODO(medium): implement group removal
-    /// Removes a group
-    // pub fn remove_group(&mut self, group_id: &GroupId) -> Result<bool> {
-    // }
-
     /// Creates a new package configuration file at the specified path.
     /// If no contents are passed, the file will be created empty.
     // TODO: check that supplied path is inside package directory (or use special wrapper type (`PathInsidePackageDir`) that makes that guarantee?)
-    pub fn create_file(&mut self, file_path_abs: &Path, opt_contents: Option<BTreeMap<GroupId, PackageGroup>> ) -> impaccable::Result<()>{
+    pub fn create_file(&mut self, file_path_abs: &Path, opt_contents: Option<PackageGroupMap> ) -> impaccable::Result<()>{
         
         if !self.files.contains_key(file_path_abs) {
 
@@ -197,15 +193,6 @@ impl PackageConfiguration{
         self.files.iter()
             .flat_map(|(_file_name, contents)| &contents.groups)
     }
-
-    // /// Allows for flattened iteration over all packages.
-    // /// TODO(low, superfluous): delete if not needed
-    // pub fn iter_packages(&self) -> impl Iterator<Item = &PackageId>{
-    //     self.files
-    //         .iter()
-    //         .flat_map(|(_file_name, contents)| &contents.groups)
-    //         .flat_map(|(_group_name, group) | &group.members)
-    // }
 
     /// Adds packages to the specified group
     pub fn add_packages<I>(&mut self, packages: I, group_id: &GroupId) -> impaccable::Result<()>
@@ -232,7 +219,6 @@ impl PackageConfiguration{
         Ok(())
     }
 
-    // TODO(medium, ergonomics): decide whether to change API to accept multiple packages
     /// Removes a package from a group.
     pub fn remove_package(&mut self, package_id: &PackageId, group_id: &GroupId) -> impaccable::Result<()> {
         let mut file_to_save : Option<PathBuf> = Option::None;
@@ -295,8 +281,7 @@ impl ActiveTarget {
         &self.target
     }
 
-    // TODO: should this check that the target exists? take target map as argument?
-    // TODO: nicer interface, not so intuitive having to pass the path here
+    // TODO(medium): nicer interface, not so intuitive having to pass the path here. Same approach as ConfigManager?
     /// Changes the active target and writes it to the specified file
     pub fn set_target(&mut self, target: TargetId, path: &Path, ) -> Result<(), Error> {
         self.target = target;

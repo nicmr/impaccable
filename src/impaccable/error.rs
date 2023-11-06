@@ -4,12 +4,11 @@ use thiserror::Error;
 
 use super::{PackageId, GroupId, config::TargetId};
 
-// TODO(low): split error into separate errors for package, group, file(?)
 #[derive(Error, Debug)]
 pub enum Error {
     // not found errors
     #[error("Active target `{0}` not found")]
-    ActiveTargetNotFound(TargetId),
+    TargetNotFound(TargetId),
 
     #[error("Root group `{0}` not found")]
     RootGroupNotFound(GroupId),
@@ -42,8 +41,6 @@ pub enum Error {
 
     // conversion errors
 
-    // TODO: create error implementation per use case instead?
-    // https://kazlauskas.me/entries/errors
     #[error(transparent)]
     Io {
         #[from]

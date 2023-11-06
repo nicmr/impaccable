@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, fmt::Display};
 
 use anyhow::bail;
 
-use crate::impaccable::{GroupId, PackageGroup};
+use crate::impaccable::{PackageGroupMap, PackageGroup};
 
 const ENDEAVOUR_OS : &str = "EndeavourOS";
 
@@ -23,19 +23,19 @@ pub fn get_system_configuration() -> anyhow::Result<SystemConfiguration> {
     }
 }
 
-pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Result<BTreeMap<GroupId, PackageGroup>> {
+pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Result<PackageGroupMap> {
     match system_config.distro.as_str() {
         ENDEAVOUR_OS => {
             let eos_package_list_base_url = "https://raw.githubusercontent.com/endeavouros-team/EndeavourOS-packages-lists/master/";
             let url_path_base = "eos-base-group";
 
-            let mut group_map : BTreeMap<GroupId, PackageGroup> = BTreeMap::new();
+            let mut group_map : PackageGroupMap = BTreeMap::new();
 
             for url_path in &[url_path_base, &system_config.desktop] {
 
                 let package_url = format!("{}{}", eos_package_list_base_url, url_path);
 
-                // TODO(low, optimization): explore possibilities to run as async instead
+                // TODO(medium, optimization): explore possibilities to run as async instead
                 let response = reqwest::blocking::get(package_url)?.text()?;
                 println!("{}", response);
 
@@ -56,4 +56,10 @@ pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Re
 pub struct SystemConfiguration {
     pub distro: String,
     pub desktop: String,
+}
+
+impl Display for SystemConfiguration {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} on {}", self.distro, self.desktop)
+    }
 }
