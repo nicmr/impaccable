@@ -16,12 +16,10 @@ use crate::impaccable::{pacman::packages_required_by, PackageGroup, GroupId};
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
 
-    // TODO: replace expect
-    // TODO: check if 'directories' crate is even needed, as this only runs on Linux anyway, and its main benefit is being cross-platform
+    // TODO(low, dependency): check if 'directories' crate is even needed, as this only runs on Linux anyway,
+    // and its main benefit over just an xdg crate is being cross-platform
     let default_project_dirs = ProjectDirs::from("dev.nicolasmohr.impaccable", "impaccable devs", "impaccable")
-    .expect("Failed to compute ProjectDirs");
-
-    
+    .context("Failed to compute ProjectDirs")?;
 
     let active_target_path = {
         if let Some(cli_target_override) = cli.target {
@@ -49,44 +47,40 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         };
 
-        let config_string = match fs::read_to_string(&config_path) {
-            Ok(s) => s,
-            Err(err) => match err.kind() {
-                io::ErrorKind::NotFound => {
-                    println!("Failed to find config file at {}", config_path.to_str().unwrap_or("<invalid unicode>"));
-                    if Confirm::new().with_prompt("Create a new config file?").interact()? {
-                        println!("Let's create a new file");
+        // Parse the config file. If it is not found, offer to create it instead.
+        let config_manager = match ConfigManager::parse(config_path.clone()) {
+            Ok(config_manager) => config_manager,
+            Err(err) => {
+                match err {
+                    impaccable::Error::ConfigFileNotFound { path: _, source: _ } => {
+                        println!("{}", err);
+                        if Confirm::new().with_prompt("Create a new config file?").interact()? {
 
-                        // write default values, then open editor
-                        let config_template = impaccable::config::Config::template();
-                        let serialized_template = toml::to_string_pretty(&config_template)?;
+                            // create template, then offer user to edit
+                            let config_template = impaccable::config::Config::template().context("Failed ot create config template contents")?;
+                            let serialized_template = toml::to_string_pretty(&config_template)?;
+                            
+                            if let Some(custom_config) = Editor::new().extension(".toml").edit(&serialized_template).context("Failed to edit config file template")? {
+                                let parent_dirs = &config_path.parent().expect("Failed to extract parent dir of config path");               
+                                fs::create_dir_all(parent_dirs)?;
+                                let mut file = fs::File::create(&config_path)?;
+                                write!(file, "{}", custom_config)?;
 
-                        
-                        if let Some(custom_config) = Editor::new().extension(".toml").edit(&serialized_template).context("Failed to edit config file template")? {
-                            let parent_dirs = &config_path.parent().expect("Failed to extract parent dir of config path");               
-                            fs::create_dir_all(parent_dirs)?;
-                            let mut file = fs::File::create(&config_path)?;
-                            write!(file, "{}", custom_config)?;
-                            custom_config
+                                // Now, we can try to parse again
+                                ConfigManager::parse(config_path)?
+                            } else {
+                                bail!(String::from("Config file creation aborted / input not saved"))
+                            }
                         } else {
-                            bail!(String::from("Config file creation aborted / input not saved"))
+                            bail!(String::from("No config file found and creation of new file declined."))
                         }
-                    }
-                    else {
-                        bail!(String::from("No config file found and creation of new file declined."))
-                    }
-                },
-                _ => {
-                    bail!(err)
+                    },
+                    _ => bail!(err),
                 }
-            }
+            },
         };
-
-        let config = toml::from_str(&config_string).context("Failed to parse configuration")?;
-        ConfigManager::new(config_path, config)
+        config_manager
     };
-
-    let mut package_config = config_manager.package_configuration().context("Failed to parse package configuration")?;
     
     let mut active_target = match std::fs::read_to_string(&active_target_path) {
         Ok(s) => ActiveTarget::parse(&s).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?,
@@ -96,18 +90,11 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 println!("Please select a new active target");
 
                 let targets : Vec<&String> = config_manager.config().targets.keys().collect();
-                let selection = match Select::with_theme(&ColorfulTheme::default())
+                let Some(selection) = Select::with_theme(&ColorfulTheme::default())
                     .items(&targets)
-                    .interact_opt() {
-                        Ok(Some(sel)) => {
-                            sel
-                        },
-                        Ok(None) => {
-                            bail!("Target selection aborted")
-                        }
-                        Err(_err) => {
-                            bail!("Target selection crashed")
-                        }
+                    .interact_opt()
+                    .context("Target selection crashed")? else  {
+                        bail!("Target selection aborted")
                 };
                 let active_target = ActiveTarget::new(targets[selection].to_string());
                 let mut file = File::create(&active_target_path).context("Failed to create file for new package group")?;
@@ -121,6 +108,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         },
     };
 
+    // The following code handles the different CLI (sub)commands, then exits.
     match &cli.command {
         None => {},
         Some(CliCommand::Config) => {
@@ -129,8 +117,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Some(CliCommand::Sync { remove_untracked }) => {
             let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
 
-            let target_config = config_manager.config().targets.get(active_target.target()).ok_or_else(|| anyhow!(impaccable::Error::ActiveTargetNotFound(active_target.target().clone())))?;
-            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target_config.root_groups).collect();
+            let target_config = config_manager.config().targets.get(active_target.target()).ok_or_else(|| anyhow!(impaccable::Error::TargetNotFound(active_target.target().clone())))?;
+            let should_be_installed : BTreeSet<&PackageId> = config_manager.package_config().packages_of_groups(&target_config.root_groups).collect();
 
             let not_installed = should_be_installed.iter().filter(|package| !pacman_installed.contains(**package));
             pacman::install_packages(not_installed).context("Failed to install missing packages")?;
@@ -142,11 +130,11 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
         Some(CliCommand::Add { packages, group }) => {
             let unique_packages : BTreeSet<PackageId> = packages.clone().into_iter().collect();
-            package_config.add_packages(unique_packages, group).context("Failed to add packages")?;
+            config_manager.package_config_mut().add_packages(unique_packages, group).context("Failed to add packages")?;
             println!("Added the following packages{:?}", packages);
         }
         Some(CliCommand::Remove { package, group }) => {
-            package_config.remove_package(package, group)?
+            config_manager.package_config_mut().remove_package(package, group)?
         }
         Some(CliCommand::Target(subcommand)) => {
             match subcommand {
@@ -175,7 +163,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Some(CliCommand::Groups(subcommand)) => {
             match subcommand {
                 Groups::Ls => {
-                    package_config.iter_groups().for_each(|(group_name, _)| println!("{}", group_name))
+                    config_manager.package_config().iter_groups().for_each(|(group_name, _)| println!("{}", group_name))
                 }
             }
         }
@@ -189,7 +177,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
 
             let missing_on_system : Vec<(&GroupId, PackageGroup)> =
-                package_config.groups(&target.root_groups)
+                config_manager.package_config().filter_groups(&target.root_groups)
                     .map(|(name, package_contents)|{
                         let not_installed : BTreeSet<PackageId> = package_contents.members.clone()
                             .into_iter()
@@ -200,7 +188,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 
             use colored::Colorize;
 
-            println!("Sync would install the following programs");
+            println!("Sync would install the following programs:");
 
             for (group, missing_packages) in missing_on_system {
                 // only display groups that have missing packages
@@ -213,13 +201,13 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
 
             if *remove_untracked {
-                println!("sync --remove-untracked would remove the following programs");
+                println!("sync --remove-untracked would remove the following programs:");
 
-                let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
+                let should_be_installed : BTreeSet<&PackageId> = config_manager.package_config().packages_of_groups(&target.root_groups).collect();
                 let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
 
                 for (untracked_package, required_by) in packages_required_by(untracked_packages)? {
-                    if required_by[0] == "None" {
+                    if required_by.is_empty() {
                         println!("{} {}", "-".red(), untracked_package.red() )
                     }
                 }
@@ -229,10 +217,9 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Some(CliCommand::Template) => {
             let system_configuration = impaccable::distro::get_system_configuration().context("Failed to get system configuration")?;
             // TODO: switch to a display implementation
-            println!("System configuration: {:?}", &system_configuration);
+            println!("Your system configuration: {}", &system_configuration);
             let new_groups = impaccable::distro::generate_configuration(&system_configuration).context("Failed to template packages for your system configuration")?;
             
-            // TODO(?): handle absolute path
             let mut file_path = config_manager.absolute_package_dir()?;
             file_path.push(system_configuration.distro);
             file_path.set_extension("toml");
@@ -245,10 +232,13 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         Some(CliCommand::Import) => {
             let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
             
-            let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find active target '{}' in config", active_target.target()))?;
+            let target = config_manager
+                .config()
+                .targets.get(active_target.target())
+                .context(format!("Failed to find active target '{}' in config", active_target.target()))?
+                .clone();
 
-            // TODO(medium): also check that groups actually exist, error accordingly
-            let should_be_installed : BTreeSet<&PackageId> = package_config.packages_of_groups(&target.root_groups).collect();
+            let should_be_installed : BTreeSet<&PackageId> = config_manager.package_config().packages_of_groups(&target.root_groups).collect();
 
             let untracked_packages : Vec<String> = pacman_installed.iter().cloned().filter(|package| !should_be_installed.contains(package)).collect();
 
@@ -266,7 +256,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 return Ok(());
             }
 
-            let groups: Vec<&String> = package_config.iter_groups().map(|(name, _)| name).collect();
+            let groups: Vec<&String> = config_manager.package_config().iter_groups().map(|(name, _)| name).collect();
 
             let dialogue_theme = ColorfulTheme::default();
 
@@ -292,7 +282,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                     // TODO(low, limitation): only ascii characters allowed by interact_text
                     .interact_text().context("Failed to get new group name")?;
 
-                let file_paths : Vec<_> = package_config.files.keys().collect();
+                let file_paths : Vec<_> = config_manager.package_config().files.keys().collect();
                 let file_strs : Vec<_> = file_paths.iter().map(|path| path.to_string_lossy()).collect();
 
                 let Some(file_selection) = FuzzySelect::with_theme(&dialogue_theme)
@@ -323,12 +313,12 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                             p.set_extension("toml");
                             p
                         };
-                        package_config.create_file(&new_file_path, None)?;
+                        config_manager.package_config_mut().create_file(&new_file_path, None)?;
                         new_file_path
                     }
                 };
 
-                package_config.create_group(new_group_name.clone(), &file_path)?;
+                config_manager.package_config_mut().create_group(new_group_name.clone(), &file_path)?;
 
                 new_group_name
             };
@@ -338,7 +328,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                     .iter()
                     .map(|index| untracked_packages[*index].clone())
                     .collect();
-            package_config.add_packages(selected_packages, &group_id).context("Failed to add packages")?;
+                config_manager.package_config_mut().add_packages(selected_packages, &group_id).context("Failed to add packages")?;
 
             if !target.root_groups.contains(&group_id) {
                 let confirmation = Confirm::with_theme(&dialogue_theme)

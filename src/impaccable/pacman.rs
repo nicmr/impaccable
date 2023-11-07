@@ -13,7 +13,7 @@ const RE_PACKAGE_REQUIRED_BY: &str = pomsky!(
 /// Thread-safe due to usage of OnceLock
 fn re_package_required_by() -> &'static Regex {
     static RE : OnceLock<Regex> = OnceLock::new();
-    // test ensuring this never panics: tests::test_required_by_regex_valid
+    // There's a test ensuring this unwrap never panics: tests::test_required_by_regex_valid
     RE.get_or_init(|| Regex::new(RE_PACKAGE_REQUIRED_BY).unwrap())
 }
 
@@ -28,7 +28,6 @@ pub fn query_explicitly_installed() -> anyhow::Result<BTreeSet<String>> {
     let mut installed_set : BTreeSet<String> = BTreeSet::new();
     for line in pacman_output_string.lines() {
         installed_set.insert(line.to_owned());
-        // TODO: could it be more efficient to have a consuming iterator and not have to use to_owned?
     }
     Ok(installed_set)
 }
@@ -62,21 +61,9 @@ where
         .status().context("Failed to run pacman -Rs")
 }
 
-// pub fn package_required_by(package: &str) -> anyhow::Result<Vec<String>> {
-//     let pacman_output_bytes = Command::new("pacman")
-//         .arg("-Qi")
-//         .arg(package)
-//         .output()
-//         .context("Failed to run pacman -Qi")?
-//         .stdout;
-
-//     let pacman_output_bytes = std::str::from_utf8(&pacman_output_bytes);
-// }
-
 /// Gets the packages requiring the passed packages.
-/// The vec may conain "None" instead of package names,
 /// indicating no packages requiring the given package.
-/// TODO(low, ergonomics): consider returning hashmap instead (mappign package name -> dependants)
+/// TODO(low, api): consider returning map instead (mapping package name -> dependants)
 pub fn packages_required_by(packages: Vec<String>) -> anyhow::Result<Vec<(String, Vec<String>)>> {
     let pacman_output_bytes = Command::new("pacman")
         .arg("-Qi")
@@ -85,9 +72,7 @@ pub fn packages_required_by(packages: Vec<String>) -> anyhow::Result<Vec<(String
         .context("Failed to run pacman -Qi")?
         .stdout;
 
-    // TODO(low, cross-platform):
-    // use OsStr instead - effectively not a problem on linux
-    // because strings are utf-8, but might cause issues on other OS if that is ever relevant 
+    // TODO(low, cross-platform): use OsStr instead - effectively not a problem on linux because strings are utf-8, but more idiomatic
     let pacman_output_str = std::str::from_utf8(&pacman_output_bytes).context("Failed to parse pacman stdout as utf8")?;
     let dependants = parse_required_by_many(pacman_output_str, Some(packages.len()))?;
 
@@ -108,18 +93,15 @@ fn parse_required_by_many(pacman_output: &str, opt_package_count: Option<usize>)
     Ok(result)
 }
 
-/// Parses the `Required by` attribute of the pacman output for a single package
-// TODO(medium, ergonomics): check for "None" in "Required By"
-// and return option accordingly
+/// Parses the `Required By` attribute of the pacman output for a single package.
+/// Packages with a "None" value will return and empty Vec.
 fn parse_required_by(pacman_output: &str) -> anyhow::Result<Vec<String>> {
     let re = re_package_required_by();
     let Some(caps) = re.captures(pacman_output) else {
-        // TODO: check if the field is always presen with None if there are no dependants
-        // consider also parsing the "None" case
         bail!("No matches for 'Required by'");
     };
 
-    let dependants =
+    let dependants : Vec<String> =
         caps
             .get(1)
             .context("Failed to get capturing group 1")?
@@ -127,6 +109,14 @@ fn parse_required_by(pacman_output: &str) -> anyhow::Result<Vec<String>> {
             .split_whitespace()
             .map(|s| s.to_owned())
             .collect();
+    
+    // Packages without dependencies have a "None" value.
+    if let Some(first_dep) = dependants.get(0) {
+        if first_dep == "None" {
+            return Ok(Vec::new())
+        }
+    }
+
     Ok(dependants)
 }
 
@@ -201,7 +191,7 @@ Validated By    : Signature
         }
         {
             let  parse_dependants = parse_required_by(pacman_Qi_output_lightdm_slick).unwrap();
-            let expected = vec!["None"];
+            let expected : Vec<String> = Vec::new();
             assert_eq!(expected, parse_dependants)
         }
     }

@@ -32,5 +32,5 @@ impl PackageGroup {
     } 
 }
 
-// TODO(medium): decide whether to use this alias or not
-type GroupMap = BTreeMap<GroupId, PackageGroup>;
+/// Default data structure to store Package groups 
+pub type PackageGroupMap = BTreeMap<GroupId, PackageGroup>;
