@@ -11,6 +11,8 @@ Medium prio features:
   ```
 - add config subcommand to dump computed package dir
 - use logging instead of println, add relevant log in library
+- detailed config error type that gives hint where in the config file the error occurs
+- document usage of relative / absolute paths
 
 Low prio features:
 - add various small commands for scripting: e.g. groups info, creation, deletion cli commands

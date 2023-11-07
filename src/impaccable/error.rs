@@ -17,9 +17,6 @@ pub enum Error {
     #[error("Active target `{0}` not found")]
     TargetNotFound(TargetId),
 
-    #[error("Root group `{0}` not found")]
-    RootGroupNotFound(GroupId),
-
     #[error("Package file `{package_file}` not found")]
     PackageFileNotFound {
         package_file: PathBuf,
@@ -28,6 +25,7 @@ pub enum Error {
     GroupNotFound {
         group: GroupId,
     },
+
     #[error("Package `{package}` not found")]
     PackageNotFound {
         package: PackageId
@@ -66,5 +64,11 @@ pub enum Error {
     DeserializeFailure {
         #[from]
         source: toml::de::Error,
+    },
+
+    // other errors
+    #[error("Config file has no parent directory")]
+    ConfigFileHasNoParentDir {
+        path: PathBuf
     },
 }

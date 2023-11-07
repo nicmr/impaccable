@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(author, version, about="A mildly declarative pacman wrapper", arg_required_else_help=true)]
+#[command(author, version, about="A declarative pacman wrapper", arg_required_else_help=true)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<CliCommand>,
@@ -17,14 +17,20 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum CliCommand {
-    /// Dump the configuration file
-    Config,
     /// Sync your target with the package configuration
     Sync {
         /// Remove packages not tracked by your configuration
         #[arg(long)]
         remove_untracked: bool,
     },
+
+    /// Determine what changes sync would apply
+    Plan {
+        /// Evaluate what changes sync with this flag would apply
+        #[arg(long)]
+        remove_untracked: bool
+    },
+    
     /// Add packages to specified group
     Add {
         #[arg(required=true, num_args=1..)]
@@ -33,7 +39,8 @@ pub enum CliCommand {
         #[arg(short, long, required=true)]
         group: String,
     },
-    /// Remove a package from specified group is using
+
+    /// Remove a package from specified group
     Remove {
         #[arg(required=true)]
         package: String,
@@ -41,21 +48,18 @@ pub enum CliCommand {
         #[arg(short, long, required=true)]
         group: String,
     },
-    #[command(subcommand)]
-    Target(Target),
 
-      /// Check what changes a Sync would apply
-    Plan {
-        /// Evaluate what changes sync with this flag would apply
-        #[arg(long)]
-        remove_untracked: bool
-    },
+    /// Import packages from your system into your config (interactive)
+    Import,
 
     /// Get a package template for your Arch-based distro
     Template,
 
-    /// Import packages existing on your system into your config (interactive)
-    Import,
+    /// Dump the configuration file
+    Config,
+    
+    #[command(subcommand)]
+    Target(Target),
 
     #[command(subcommand)]
     Groups(Groups)

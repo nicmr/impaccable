@@ -177,7 +177,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
 
 
             let missing_on_system : Vec<(&GroupId, PackageGroup)> =
-                config_manager.package_config().groups(&target.root_groups)
+                config_manager.package_config().filter_groups(&target.root_groups)
                     .map(|(name, package_contents)|{
                         let not_installed : BTreeSet<PackageId> = package_contents.members.clone()
                             .into_iter()

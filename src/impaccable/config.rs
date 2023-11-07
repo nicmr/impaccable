@@ -10,7 +10,6 @@ use super::{GroupId, Error, PackageId, PackageGroup, PackageGroupMap};
 
 use std::iter::Extend;
 
-// TODO(high, docs): ensure, then document that config_path is always an absolute path
 /// Manages the configuration, persisting it to the config file when required.
 pub struct ConfigManager {
     config_path: PathBuf,
@@ -32,12 +31,25 @@ impl ConfigManager {
             })?;
 
         let config : Config = toml::from_str(&config_string)?;
-        // TODO(high): error in case config path is set to top level directory instead of unwrap
-        let package_config_path = config_path.parent().unwrap().join(&config.package_dir);
+        let package_config_path = config_path.parent()
+            .ok_or(Error::ConfigFileHasNoParentDir{path: config_path.clone()})?
+            .join(&config.package_dir);
         let package_config = PackageConfiguration::parse(&package_config_path)?;
 
+        let package_group_names : BTreeSet<&GroupId> =
+            package_config.files
+                .iter()
+                .flat_map(|(_, contained_groups)| contained_groups.groups.keys())
+                .collect();
 
-        // TODO(high): verify config before returning
+        // verify all groups configured in the config file actually exist in the package configuration
+        for (_target_id, target) in &config.targets {
+            for configured_group in &target.root_groups {
+                if package_group_names.contains(configured_group){
+                    return Err(impaccable::Error::GroupNotFound { group: configured_group.to_owned() });
+                }
+            }
+        }
 
         Ok(Self { config_path, config, package_config })
     }
@@ -175,12 +187,12 @@ impl PackageConfiguration{
 
     /// Returns an iterator over the packages contained by the specified groups.
     pub fn packages_of_groups<'a>(&'a self, groups: &'a BTreeSet<GroupId>) -> impl Iterator<Item = &PackageId> + 'a  {
-        self.groups(groups)
+        self.filter_groups(groups)
             .flat_map(|(_, package_group)| &package_group.members)
     }
 
     /// Creates an iterator over package groups pre-filtered to only contain the specified groups.
-    pub fn groups<'a>(&'a self, groups: &'a BTreeSet<GroupId>) -> impl Iterator<Item = (&String, &PackageGroup)> {
+    pub fn filter_groups<'a>(&'a self, groups: &'a BTreeSet<GroupId>) -> impl Iterator<Item = (&String, &PackageGroup)> {
         self.files
             .iter()
             .flat_map(|(_file_name, contents)| &contents.groups)
