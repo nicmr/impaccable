@@ -18,9 +18,13 @@ fn re_package_required_by() -> &'static Regex {
 }
 
 /// Queries what packages are installed on the system
-pub fn query_explicitly_installed() -> anyhow::Result<BTreeSet<String>> {
+pub fn query_installed(explicit: bool) -> anyhow::Result<BTreeSet<String>> {
+    let mut pacman_args = String::from("-Qq");
+    if explicit {
+        pacman_args.push('e')
+    }
     let pacman_output_bytes = Command::new("pacman")
-        .arg("-Qqe")
+        .arg(&pacman_args)
         .output()
         .context("Failed to run pacman -Qqe")?
         .stdout;
@@ -31,6 +35,7 @@ pub fn query_explicitly_installed() -> anyhow::Result<BTreeSet<String>> {
     }
     Ok(installed_set)
 }
+
 
 /// Installs the supplied packages.
 pub fn install_packages<I, S>(packages: I) -> anyhow::Result<()>

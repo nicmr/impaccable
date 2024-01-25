@@ -115,7 +115,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             println!("config: {:?}", config_manager.config());
         }
         Some(CliCommand::Sync { remove_untracked }) => {
-            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_installed(true).context("Failed to query installed packages")?;
 
             let target_config = config_manager.config().targets.get(active_target.target()).ok_or_else(|| anyhow!(impaccable::Error::TargetNotFound(active_target.target().clone())))?;
             let should_be_installed : BTreeSet<&PackageId> = config_manager.package_config().packages_of_groups(&target_config.root_groups).collect();
@@ -168,7 +168,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         }
         Some(CliCommand::Plan { remove_untracked }) => {
-            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_installed(true).context("Failed to query installed packages")?;
 
             let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
 
@@ -230,7 +230,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
 
         Some(CliCommand::Import) => {
-            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_installed(true).context("Failed to query installed packages")?;
             
             let target = config_manager
                 .config()
