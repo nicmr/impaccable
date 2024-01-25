@@ -1,6 +1,7 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::{collections::BTreeMap, fmt::Display, path::PathBuf, io::BufReader, fs::File};
 
-use anyhow::bail;
+use anyhow::{bail, Context};
+use procfs::{self, FromBufRead};
 
 use crate::impaccable::{PackageGroupMap, PackageGroup};
 
@@ -39,9 +40,9 @@ pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Re
                 let response = reqwest::blocking::get(package_url)?.text()?;
                 println!("{}", response);
 
-                let package_group = PackageGroup {
-                    members: response.lines().map(|x| x.to_owned()).collect()
-                };
+                let package_group = PackageGroup::from_members(
+                    response.lines().map(|x| x.to_owned()).collect()
+                );
                 group_map.insert(format!("{}-{}", system_config.distro, url_path), package_group);
             }
             Ok(group_map)
@@ -50,6 +51,26 @@ pub fn generate_configuration(system_config: &SystemConfiguration) -> anyhow::Re
             bail!(format!("Distro not supported for package templating: {}", &system_config.distro))
         }
     }
+}
+
+
+// TODO: use this for proper AMD and intel ucode handling
+fn get_cpu_vendor() -> anyhow::Result<CpuVendor> {
+    let file = File::open("/proc/cpuinfo")?;
+    let reader = BufReader::new(file);
+    let cpuinfo = procfs::CpuInfo::from_buf_read(reader)?;
+    let vendor_id = cpuinfo.fields.get("vendor_id").context("Failed to retrieve vendor_id")?;
+    match &vendor_id[..] {
+        "Amd" => Ok(CpuVendor::Amd),
+        "Intel" => Ok(CpuVendor::Intel),
+        // TODO: Improve error reporting
+        _ => bail!("Unsupported Cpu Vendor")
+    }
+}
+
+enum CpuVendor {
+    Amd,
+    Intel,
 }
 
 #[derive(Debug, Clone)]
