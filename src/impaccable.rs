@@ -19,7 +19,6 @@ pub type GroupId = String;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct PackageGroup {
     pub members: BTreeSet<PackageId>,
-    pub accept_indirect: bool,
 }
 
 impl PackageGroup {
