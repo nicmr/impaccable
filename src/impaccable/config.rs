@@ -96,6 +96,7 @@ impl ConfigManager {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     pub package_dir: PathBuf,
+    pub pacman_wrapper: String,
     pub targets: BTreeMap<TargetId, TargetConfig>
 }
 
@@ -116,6 +117,7 @@ impl Config {
         );
         Ok(Self {
                     package_dir : "./packages".into(),
+                    pacman_wrapper: "paru".into(),
                     targets,
                 })
     }

@@ -4,6 +4,10 @@ use anyhow::{Context, bail};
 use pomsky_macro::pomsky;
 use regex::Regex;
 
+pub struct PacmanWrapper {
+    pub wrapper: String
+}
+
 const RE_PACKAGE_REQUIRED_BY: &str = pomsky!(
     let package_name_char = ['a'-'z' '0'-'9' '@' '.' '_' '+' '-'];
     "Required By"[s]+": ":(((package_name_char+)' '*)+ | "None")
@@ -36,21 +40,24 @@ pub fn query_installed(explicit: bool) -> anyhow::Result<BTreeSet<String>> {
     Ok(installed_set)
 }
 
-
-/// Installs the supplied packages.
-pub fn install_packages<I, S>(packages: I) -> anyhow::Result<()>
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<OsStr>,
-{
-    let _pacman_command = Command::new("pacman")
-        .arg("-S")
-        .args(packages)
-        .stdin(Stdio::inherit())
-        .status()
-        .context("Failed to run pacman")?;
-    Ok(())
+impl PacmanWrapper {
+    /// Installs the supplied packages.
+    pub fn install_packages<I, S>(&self, packages: I) -> anyhow::Result<()>
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
+        let _pacman_command = Command::new(self.wrapper.clone())
+            .arg("-S")
+            .args(packages)
+            .stdin(Stdio::inherit())
+            .status()
+            .context("Failed to run pacman")?;
+        Ok(())
+    }
 }
+
+
 
 
 /// Uninstalls the supplied packages.
