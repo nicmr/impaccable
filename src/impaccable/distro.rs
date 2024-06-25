@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Display, path::PathBuf, io::BufReader, fs::File};
+use std::{collections::BTreeMap, fmt::Display, io::BufReader, fs::File};
 
 use anyhow::{bail, Context};
 use procfs::{self, FromBufRead};

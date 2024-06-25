@@ -33,6 +33,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
     };
 
+    println!("active target path: {}", active_target_path.to_string_lossy());
+
     let mut config_manager : impaccable::config::ConfigManager = {
         let config_path = {
             if let Some(cli_config_override) = cli.config {
@@ -46,6 +48,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 default_config_path
             }
         };
+        println!("config path: {}", config_path.to_string_lossy());
+
 
         // Parse the config file. If it is not found, offer to create it instead.
         let config_manager = match ConfigManager::parse(config_path.clone()) {
@@ -81,6 +85,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         };
         config_manager
     };
+
     
     let mut active_target = match std::fs::read_to_string(&active_target_path) {
         Ok(s) => ActiveTarget::parse(&s).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?,
@@ -107,6 +112,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         },
     };
+
+    println!("active target: {}", active_target.target());
 
     // The following code handles the different CLI (sub)commands, then exits.
     match &cli.command {

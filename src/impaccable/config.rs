@@ -45,8 +45,8 @@ impl ConfigManager {
         // verify all groups configured in the config file actually exist in the package configuration
         for (_target_id, target) in &config.targets {
             for configured_group in &target.root_groups {
-                if package_group_names.contains(configured_group){
-                    return Err(impaccable::Error::GroupNotFound { group: configured_group.to_owned() });
+                if !package_group_names.contains(configured_group){
+                    return Err(impaccable::Error::GroupNotFound { group: configured_group.to_owned(), package_dir: package_config_path });
                 }
             }
         }
@@ -55,6 +55,7 @@ impl ConfigManager {
     }
 
     pub fn config(&self) -> &Config { &self.config }
+    pub fn config_path(&self) -> &Path { &self.config_path }
     pub fn package_config(&self) -> &PackageConfiguration { &self.package_config }
     pub fn package_config_mut(&mut self) -> &mut PackageConfiguration { &mut self.package_config } 
 
@@ -125,19 +126,12 @@ pub struct TargetConfig {
     pub root_groups: BTreeSet<GroupId>
 }
 
-/// Represents the parsed form of the entire package configuration of a system.
-/// Files are indexed by their absolute paths.
-#[derive(Debug, Default, Clone)]
-pub struct PackageConfiguration {
-    pub files : HashMap<PathBuf, PackageFile>
-}
-
 #[derive(Debug, Default, Clone)]
 pub struct PackageFile {
     pub groups: PackageGroupMap
 }
 
-impl PackageFile {
+impl PackageFile { 
     pub fn new() -> Self {
         Self {
             groups: BTreeMap::new()
@@ -148,10 +142,24 @@ impl PackageFile {
     }
 }
 
+/// Represents the parsed form of the entire package configuration of a system.
+/// Files are indexed by their absolute paths.
+#[derive(Debug, Default, Clone)]
+pub struct PackageConfiguration {
+    pub files : HashMap<PathBuf, PackageFile>,
+    package_dir : PathBuf
+}
+
 impl PackageConfiguration{
+    fn new(package_dir: &Path) -> Self {
+        Self {
+            package_dir: package_dir.into(),
+            ..Default::default()
+        }
+    }
     /// Parses a package directory to generate a corresponding `PackageConfiguration`
     fn parse(package_dir: &Path) -> impaccable::Result<Self> {
-        let mut package_configuration = PackageConfiguration::default();
+        let mut package_configuration = PackageConfiguration::new(package_dir);
 
         for entry in WalkDir::new(package_dir)
             .into_iter()
@@ -243,7 +251,7 @@ impl PackageConfiguration{
             }
         }
         let (Some(package_group), Some(file)) = (package_group_ref, file_to_save) else {
-            return Err(Error::GroupNotFound { group: group_id.clone() });
+            return Err(Error::GroupNotFound { group: group_id.clone(), package_dir: self.package_dir.clone() });
         };
         package_group.extend(packages);
         self.write_file_to_disk(&file)?;
@@ -268,7 +276,7 @@ impl PackageConfiguration{
         }
         let Some(file) = file_to_save else {
             if !group_found {
-                return Err(Error::GroupNotFound { group: group_id.to_owned() });
+                return Err(Error::GroupNotFound { group: group_id.to_owned(), package_dir: self.package_dir.clone() });
             } else {
                 return Err(Error::PackageNotFound { package: package_id.clone() });
             }
