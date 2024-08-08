@@ -15,6 +15,7 @@ directories = "4.0.1"
 log = "0.4.17"
 os-release = "0.1.0"
 pomsky-macro = "0.10.0"
+procfs = "0.16.0"
 regex = "1.10.2"
 reqwest = {version = "0.11.21", default-features = false, features = ["default-tls", "blocking"]}
 serde = {version = "1.0.152", features = ["derive"]}

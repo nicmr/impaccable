@@ -6,12 +6,13 @@ use clap::Parser;
 use impaccable::{config::{ConfigManager, ActiveTarget}, pacman, PackageId};
 use dialoguer::{Confirm, Editor, theme::ColorfulTheme, Input, FuzzySelect, MultiSelect, Select};
 use directories::ProjectDirs;
+use serde::de::IntoDeserializer;
 use std::{path::PathBuf, fs::{self, File}, env, io, collections::BTreeSet};
 use std::io::Write;
 use anyhow::{Context, bail, anyhow};
 use cli::{Cli, CliCommand, Target, Groups};
 
-use crate::impaccable::{pacman::packages_required_by, PackageGroup, GroupId};
+use crate::impaccable::{pacman::{packages_required_by, PacmanWrapper}, GroupId, PackageGroup};
 
 fn main() -> std::result::Result<(), anyhow::Error> {
     let cli = Cli::parse();
@@ -33,6 +34,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
     };
 
+    println!("active target path: {}", active_target_path.to_string_lossy());
+
     let mut config_manager : impaccable::config::ConfigManager = {
         let config_path = {
             if let Some(cli_config_override) = cli.config {
@@ -46,6 +49,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
                 default_config_path
             }
         };
+        println!("config path: {}", config_path.to_string_lossy());
+
 
         // Parse the config file. If it is not found, offer to create it instead.
         let config_manager = match ConfigManager::parse(config_path.clone()) {
@@ -81,6 +86,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         };
         config_manager
     };
+
     
     let mut active_target = match std::fs::read_to_string(&active_target_path) {
         Ok(s) => ActiveTarget::parse(&s).context(format!("Failed to parse active target at '{}'", &active_target_path.to_string_lossy()))?,
@@ -108,6 +114,8 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         },
     };
 
+    println!("active target: {}", active_target.target());
+
     // The following code handles the different CLI (sub)commands, then exits.
     match &cli.command {
         None => {},
@@ -115,13 +123,16 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             println!("config: {:?}", config_manager.config());
         }
         Some(CliCommand::Sync { remove_untracked }) => {
-            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            // TODO: get from config
+            let pacman_wrapper = PacmanWrapper{ wrapper: "paru".into() };
+
+            let pacman_installed = impaccable::pacman::query_installed(true).context("Failed to query installed packages")?;
 
             let target_config = config_manager.config().targets.get(active_target.target()).ok_or_else(|| anyhow!(impaccable::Error::TargetNotFound(active_target.target().clone())))?;
             let should_be_installed : BTreeSet<&PackageId> = config_manager.package_config().packages_of_groups(&target_config.root_groups).collect();
 
             let not_installed = should_be_installed.iter().filter(|package| !pacman_installed.contains(**package));
-            pacman::install_packages(not_installed).context("Failed to install missing packages")?;
+            pacman_wrapper.install_packages(not_installed).context("Failed to install missing packages")?;
             
             if *remove_untracked {
                 let untracked_packages = pacman_installed.iter().cloned().filter(|package| should_be_installed.contains(package));
@@ -168,7 +179,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
             }
         }
         Some(CliCommand::Plan { remove_untracked }) => {
-            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_installed(true).context("Failed to query installed packages")?;
 
             let target = config_manager.config().targets.get(active_target.target()).context(format!("Failed to find root group {} in config", active_target.target()))?;
 
@@ -230,7 +241,7 @@ fn main() -> std::result::Result<(), anyhow::Error> {
         }
 
         Some(CliCommand::Import) => {
-            let pacman_installed = impaccable::pacman::query_explicitly_installed().context("Failed to query installed packages")?;
+            let pacman_installed = impaccable::pacman::query_installed(true).context("Failed to query installed packages")?;
             
             let target = config_manager
                 .config()

@@ -21,9 +21,10 @@ pub enum Error {
     PackageFileNotFound {
         package_file: PathBuf,
     },
-    #[error("Group `{group}` not found")]
+    #[error("Group `{group}` not found in package dir `{package_dir}`")]
     GroupNotFound {
         group: GroupId,
+        package_dir: PathBuf,
     },
 
     #[error("Package `{package}` not found")]
